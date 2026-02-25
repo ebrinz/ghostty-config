@@ -1,0 +1,4 @@
+# Feline Homunculus: Lost in Tokyo on a Rainy Night
+theme = feline-homunculus
+custom-shader = /Users/crashy/.config/ghostty/shaders/feline-homunculus.glsl
+custom-shader-animation = true

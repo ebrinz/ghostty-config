@@ -1,0 +1,26 @@
+background = #0a0a0f
+foreground = #b8c4b8
+cursor-color = #00ff41
+cursor-text = #0a0a0f
+selection-background = #1a3a1a
+selection-foreground = #e0ffe0
+
+# ANSI Normal (0-7)
+palette = 0=#0a0a0f
+palette = 1=#8b1a1a
+palette = 2=#00ff41
+palette = 3=#9b8a2f
+palette = 4=#2a6e4f
+palette = 5=#6b2fa5
+palette = 6=#1abc9c
+palette = 7=#8a9a8a
+
+# ANSI Bright (8-15)
+palette = 8=#3a4a3a
+palette = 9=#c43c3c
+palette = 10=#39ff14
+palette = 11=#d4a017
+palette = 12=#3cb99e
+palette = 13=#9b59b6
+palette = 14=#2ecc71
+palette = 15=#c8d8c8
