@@ -76,7 +76,22 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float scanline = 1.0 - 0.15 * mod(floor(fragCoord.y), 2.0);
     color *= scanline;
 
-    // --- Layers 2-6 will be inserted here ---
+    // --- Layer 2: Plasma Field ---
+    vec3 violet = vec3(0.56, 0.25, 0.85);
+    vec3 cyan   = vec3(0.13, 0.72, 0.78);
+    vec3 hotWhite = vec3(0.9, 0.88, 1.0);
+
+    float phase = noise(vec2(time * 0.08, 0.0));
+    float phase2 = noise(vec2(time * 0.06, 100.0));
+    vec3 plasmaColor = mix(violet, cyan, phase);
+    plasmaColor = mix(plasmaColor, hotWhite, phase2 * 0.4);
+
+    float plasmaMask = smoothstep(0.25, 0.55, edgeDist);
+    float plasmaFlicker = 0.7 + 0.3 * noise(vec2(time * 2.5, uv.x * 8.0 + uv.y * 8.0));
+
+    color += plasmaColor * plasmaMask * plasmaFlicker * 0.08;
+
+    // --- Layers 3-6 will be inserted here ---
 
     // --- Layer 7: Text Protection ---
     color = clamp(color, 0.0, 1.0);
