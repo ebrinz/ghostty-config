@@ -41,6 +41,39 @@ vec2 barrelDistort(vec2 uv, float strength) {
 }
 
 // ---------------------------------------------------------------------------
+// Electrode arc — hash-based time-cell discharge
+// ---------------------------------------------------------------------------
+
+float electrodeArc(vec2 uv, float time) {
+    float cellSize = 4.0;
+    float cell = floor(time / cellSize);
+    float localTime = fract(time / cellSize);
+
+    float fires = step(0.6, hash21(vec2(cell, 0.0)));
+    if (fires < 0.5) return 0.0;
+
+    float envelope = smoothstep(0.0, 0.05, localTime)
+                   * smoothstep(0.2, 0.12, localTime);
+
+    float orientation = hash21(vec2(cell, 10.0));
+    float pathPos = hash21(vec2(cell, 20.0)) * 0.6 + 0.2;
+
+    float arcLine;
+    if (orientation > 0.5) {
+        float wobble = sin(uv.x * 15.0 + hash21(vec2(cell, 30.0)) * 6.28) * 0.03;
+        arcLine = abs(uv.y - pathPos + wobble);
+    } else {
+        float wobble = sin(uv.y * 15.0 + hash21(vec2(cell, 40.0)) * 6.28) * 0.03;
+        arcLine = abs(uv.x - pathPos + wobble);
+    }
+
+    float core = smoothstep(0.008, 0.0, arcLine);
+    float glow = smoothstep(0.06, 0.0, arcLine) * 0.3;
+
+    return (core + glow) * envelope;
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -91,7 +124,12 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
 
     color += plasmaColor * plasmaMask * plasmaFlicker * 0.08;
 
-    // --- Layers 3-6 will be inserted here ---
+    // --- Layer 3: Electrode Arcs ---
+    float arc = electrodeArc(uv, time);
+    vec3 arcColor = mix(plasmaColor, hotWhite, 0.6);
+    color += arcColor * arc * 0.35;
+
+    // --- Layers 4-6 will be inserted here ---
 
     // --- Layer 7: Text Protection ---
     color = clamp(color, 0.0, 1.0);
