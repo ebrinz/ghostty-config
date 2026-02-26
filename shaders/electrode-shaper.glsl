@@ -136,7 +136,17 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float emf = band * 0.04 + burst * 0.03;
     color += vec3(emf) * plasmaColor;
 
-    // --- Layers 5-6 will be inserted here ---
+    // --- Layer 5: Vignette (CRT bezel + chamber walls) ---
+    float vignetteDist = length(rawUV - 0.5);
+    float vignette = smoothstep(0.75, 0.3, vignetteDist);
+    vignette = mix(0.2, 1.0, vignette);
+    color *= vignette;
+
+    // --- Layer 6: 40 Hz Gamma Entrainment ---
+    float gamma = sin(2.0 * PI * GAMMA_HZ * time);
+    float peripheryWeight = smoothstep(0.15, 0.5, vignetteDist);
+    float gammaModulation = 1.0 + GAMMA_AMP * gamma * peripheryWeight;
+    color *= gammaModulation;
 
     // --- Layer 7: Text Protection ---
     color = clamp(color, 0.0, 1.0);
