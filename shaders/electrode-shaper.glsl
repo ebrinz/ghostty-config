@@ -129,7 +129,14 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     vec3 arcColor = mix(plasmaColor, hotWhite, 0.6);
     color += arcColor * arc * 0.35;
 
-    // --- Layers 4-6 will be inserted here ---
+    // --- Layer 4: EMF Interference ---
+    float bandY = uv.y * 80.0 + time * 2.0;
+    float band = noise(vec2(0.0, bandY)) * noise(vec2(time * 0.5, bandY * 0.3));
+    float burst = smoothstep(0.7, 0.9, noise(vec2(time * 0.3, uv.y * 2.0)));
+    float emf = band * 0.04 + burst * 0.03;
+    color += vec3(emf) * plasmaColor;
+
+    // --- Layers 5-6 will be inserted here ---
 
     // --- Layer 7: Text Protection ---
     color = clamp(color, 0.0, 1.0);
