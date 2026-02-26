@@ -54,7 +54,7 @@ shader="${SHADERS_DIR}/${chosen}.glsl"
 pretty="${chosen//-/ }"
 pretty="${(C)pretty}"
 
-# Rewrite config — Ghostty watches this file and reloads automatically
+# Rewrite config
 cat > "${CONFIG}" <<EOF
 # ${pretty}
 theme = ${chosen}
@@ -62,4 +62,4 @@ custom-shader = ${shader}
 custom-shader-animation = true
 EOF
 
-echo "🎨 ${pretty}"
+echo "🎨 ${pretty}  · Cmd+Shift+, to reload"

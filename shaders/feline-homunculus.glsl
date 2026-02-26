@@ -44,8 +44,8 @@ float rainStreak(vec2 uv, float time) {
     // Layer 0: close rain  — scale 30, speed 1.2, full brightness
     // Layer 1: far rain    — scale 50, speed 1.8, half brightness
     for (int layer = 0; layer < 2; layer++) {
-        float scale     = (layer == 0) ? 30.0 : 50.0;
-        float speed     = (layer == 0) ? 1.2  : 1.8;
+        float scale     = (layer == 0) ? 14.0 : 24.0;
+        float speed     = (layer == 0) ? 1.4  : 2.0;
         float brightness = (layer == 0) ? 1.0  : 0.5;
 
         vec2 st = uv * scale;
@@ -61,19 +61,25 @@ float rainStreak(vec2 uv, float time) {
         // Random x-offset so drops don't align on a grid
         float xOff = hash21(cell + 0.5 + float(layer) * 73.0);
 
-        // Slight sinusoidal wobble
-        float wobble = sin(cell.y * 0.8 + time * 2.0 + xOff * 6.28) * 0.08;
+        // Wind sway — shifts the whole streak, bending more at the tail
+        float wind = sin(cell.y * 0.8 + time * 2.0 + xOff * 6.28);
+        float wobbleHead = wind * 0.08;
+        float wobbleTail = wind * 0.16;  // tail drifts further in the wind
+        float wobble = mix(wobbleTail, wobbleHead, smoothstep(0.0, 0.8, local.y));
 
         float dropX = fract(xOff + wobble);
 
-        // Thin vertical line: sharp horizontal falloff, softer vertical
+        // Tapered streak: wider at the bright head, thinner at the fading tail
+        float taper = 0.3 + 0.7 * smoothstep(0.0, 0.7, local.y);
         float dx = abs(local.x - dropX);
-        float lineWidth = 0.02 + 0.01 * hash21(cell + 99.0); // slight width variation
+        float baseWidth = (layer == 0) ? 0.018 : 0.03;  // foreground thinner
+        float lineWidth = (baseWidth + 0.01 * hash21(cell + 99.0)) * taper;
         float streak = smoothstep(lineWidth, 0.0, dx);
 
-        // Vertical fade so drops have a head and tail
-        float headTail = smoothstep(0.0, 0.15, local.y) * smoothstep(1.0, 0.6, local.y);
-        streak *= headTail;
+        // Streak fade: bright head at bottom, long trail fading above
+        float trail = pow(smoothstep(0.0, 0.85, local.y), 1.8);
+        float headCap = smoothstep(1.0, 0.93, local.y);  // tiny fade at leading edge
+        streak *= trail * headCap;
 
         rain += streak * brightness;
     }
@@ -104,7 +110,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // -----------------------------------------------------------------------
     float rain = rainStreak(uv, time);
     vec3 rainColor = vec3(0.6, 0.75, 0.9);           // cool white-blue
-    color += rainColor * rain * 0.06;
+    color += rainColor * rain * 0.18;
 
     // -----------------------------------------------------------------------
     // Layer 2 — Neon Glow Bleed (left warm, right cool)
@@ -146,6 +152,17 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     vec3 pavementColor = mix(reflected * ripple, lantern, 0.3);
 
     color += pavementColor * pavementMask * 0.07;
+
+    // -----------------------------------------------------------------------
+    // Layer 3b — Bottom Glow (city light washing upward)
+    // -----------------------------------------------------------------------
+    float glowMask = smoothstep(0.35, 0.0, uv.y);      // fades out by 35% up
+    float glowPulse = 0.85 + 0.15 * noise(vec2(time * 0.2, 300.0));
+    // Warm amber-pink blend that shifts slowly
+    float glowShift = noise(vec2(uv.x * 1.5 + time * 0.08, 400.0));
+    vec3 glowColor = mix(amber * 0.7 + pink * 0.3,
+                         teal  * 0.5 + amber * 0.5, glowShift);
+    color += glowColor * glowMask * glowPulse * 0.10;
 
     // -----------------------------------------------------------------------
     // Layer 4 — Asymmetric Vignette
