@@ -1,4 +1,4 @@
-# Feline Homunculus
-theme = feline-homunculus
-custom-shader = /Users/crashy/.config/ghostty/shaders/feline-homunculus.glsl
+# Deep Drift
+theme = deep-drift
+custom-shader = /Users/crashy/.config/ghostty/shaders/deep-drift.glsl
 custom-shader-animation = true
