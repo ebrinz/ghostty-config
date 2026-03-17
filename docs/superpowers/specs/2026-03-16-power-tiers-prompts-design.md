@@ -5,7 +5,7 @@
 
 ## Problem
 
-Four custom GLSL shaders run at 60fps via `custom-shader-animation = true`. With multiple Ghostty windows open, GPU usage scales linearly (N windows x 60 shader invocations/sec). The heaviest shader (street-shaman) uses 20+ noise evaluations per fragment. There is no way to dial down visual fidelity per-window, and only one of the four themes has a matching shell prompt.
+Four custom GLSL shaders run at 60fps via `custom-shader-animation = true`. With multiple Ghostty windows open, GPU usage scales linearly (N windows x 60 shader invocations/sec). The heaviest shader (street-shaman) uses 26 noise evaluations per fragment (5 fbm calls x 5 octaves each + 1 standalone noise call). There is no way to dial down visual fidelity per-window, and only one of the four themes has a matching shell prompt.
 
 ## Goals
 
@@ -61,6 +61,8 @@ Four custom GLSL shaders run at 60fps via `custom-shader-animation = true`. With
 
 Flag (`--full`, `--lite`, `--static`, `--no-shader`) takes precedence over `$GHOSTTY_POWER` env var, which takes precedence over the default (`full`).
 
+Valid values for `GHOSTTY_POWER`: `full`, `lite`, `static`, `no-shader`.
+
 ### Launcher CLI
 
 ```bash
@@ -72,6 +74,15 @@ ghostty --lite                     # random theme, lite shader
 ghostty --no-shader                # random theme, theme colors only
 ghostty list                       # show available themes (existing)
 ```
+
+### Argument Parsing
+
+The launcher must distinguish theme names from flags. Parsing strategy:
+
+1. Iterate all arguments. Any argument starting with `--` is a flag; any other non-flag argument is treated as the theme name (or `list` command).
+2. Theme name and flags can appear in any order: `ghostty --lite deep-drift` and `ghostty deep-drift --lite` are equivalent.
+3. `ghostty list --lite` is valid — it prints the theme list and ignores the flag.
+4. At most one tier flag is accepted. If multiple tier flags are given, the last one wins.
 
 ### Config Generation
 
@@ -92,7 +103,13 @@ After writing the config, the launcher prints a `source` hint if a matching prom
 source ~/.config/ghostty/prompts/<theme>.sh
 ```
 
-The launcher does NOT auto-source the prompt (it can't modify the calling shell). The user adds this to their `.zshrc` or sources manually. The `ghostty-random.sh` script will print the source command as a hint.
+The launcher does NOT auto-source the prompt (it can't modify the calling shell). The user adds this to their `.zshrc` or sources manually. The launcher prints the hint with the resolved theme name — in random mode this is the randomly chosen theme, e.g.:
+
+```
+source ~/.config/ghostty/prompts/deep-drift.sh
+```
+
+The hint is only printed when a matching file exists in `prompts/`.
 
 ## Lite Shader Layer Retention
 
@@ -101,20 +118,20 @@ Each lite variant keeps the cheapest layers that preserve the theme's identity.
 ### street-shaman-lite.glsl
 
 **Keeps:** firelight flicker (1 noise call), bottom glow (sin pulse), vignette, 40Hz gamma, text protection.
-**Drops:** fbm smoke (5-octave x2 calls), fbm azure wisps (5-octave x3 calls), heat distortion.
-**Savings:** Eliminates all fbm calls (20 noise evals -> 1). Largest reduction of any theme.
+**Drops:** fbm smoke (5-octave x2 calls = 10 noise evals), fbm azure wisps (5-octave x3 calls = 15 noise evals), heat distortion.
+**Savings:** Eliminates all 5 fbm calls (25 noise evals); retains 1 standalone noise call for firelight. Total: 26 -> 1. Largest reduction of any theme.
 
 ### feline-homunculus-lite.glsl
 
 **Keeps:** rain streaks (1 layer instead of 2), vignette, 40Hz gamma, text protection.
-**Drops:** neon glow bleed (warm + cool sides, 4 noise calls), pavement reflections (ripple math + noise), bottom glow (noise).
-**Savings:** Eliminates 5+ noise calls and all bottom-screen compositing. Rain is the signature effect.
+**Drops:** neon glow bleed (warm + cool sides, 4 noise calls), pavement reflections (1 noise call + ripple math), bottom glow (2 noise calls).
+**Savings:** Eliminates 7 noise calls and all bottom-screen compositing. Rain is the signature effect.
 
 ### deep-drift-lite.glsl
 
-**Keeps:** barrel distortion + chromatic aberration (4 texture samples), burn-in (static function, cheap), scanlines, vignette, 40Hz gamma, text protection.
+**Keeps:** barrel distortion + chromatic aberration (4 texture samples), burn-in (no `iTime` dependency, cheap per-frame), scanlines, vignette, 40Hz gamma, text protection.
 **Drops:** power supply flicker (2 noise calls), radiation burst (branching + hash), h-sync wobble (sin + smoothstep on UV).
-**Savings:** Eliminates all time-dependent noise. Burn-in is static so free after first frame. CRT look preserved.
+**Savings:** Eliminates all time-dependent noise. Burn-in has no `iTime` dependency so the compiler can optimize it heavily, but it still executes every frame since `custom-shader-animation = true` for lite tier. CRT look preserved.
 
 ### electrode-shaper-lite.glsl
 
@@ -127,7 +144,7 @@ Each lite variant keeps the cheapest layers that preserve the theme's identity.
 All static variants share a common structure — they have zero `iTime` dependency and run once per resize/redraw.
 
 **All themes keep:** vignette, text protection.
-**CRT themes (deep-drift, electrode-shaper) also keep:** barrel distortion, chromatic aberration, scanlines, burn-in (deep-drift only).
+**CRT themes (deep-drift, electrode-shaper) also keep:** barrel distortion, chromatic aberration, scanlines. Deep-drift additionally keeps burn-in (its full shader has a `burnIn()` function; electrode-shaper does not have burn-in in its full shader, so its static variant omits it — no new burn-in layer is authored).
 **Non-CRT themes (street-shaman, feline-homunculus) also keep:** vignette only (no barrel/scanlines in originals).
 
 Static shaders set `custom-shader-animation = false`, meaning the GPU renders the shader once and caches the result until the window resizes or content redraws. Near-zero ongoing GPU cost.
