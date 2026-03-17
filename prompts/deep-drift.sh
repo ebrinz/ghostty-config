@@ -1,8 +1,8 @@
-# deep-drift-prompt.sh — USS Erebus Ship Console Prompt
+# deep-drift.sh — USS Erebus Ship Console Prompt
 # Source this file to activate the deep space terminal prompt.
 #
 # Usage:
-#   source ~/.config/ghostty/deep-drift-prompt.sh
+#   source ~/.config/ghostty/prompts/deep-drift.sh
 #
 # Renders:
 #   ┌─[USS EREBUS]─[DECK 7 TERM 03]─[SOL 10957]─[O2:94%]─[HULL:87%]

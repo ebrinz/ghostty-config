@@ -1,7 +1,7 @@
 // street-shaman-lite.glsl
 // Lite variant: firelight flicker + bottom glow only.
 // Drops: fbm smoke, azure wisps, heat distortion (26 -> 1 noise eval).
-// Effects: firelight flicker, vignette, 40Hz gamma entrainment, text protection.
+// Effects: firelight flicker, bottom glow, vignette, 40Hz gamma entrainment, text protection.
 
 const float PI = 3.14159265359;
 const float GAMMA_HZ = 40.0;
