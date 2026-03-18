@@ -31,6 +31,10 @@ Night ritual: deep indigo base, gold accents, lapis lazuli and turquoise highlig
 | palette 13 (bright magenta) | `#b85ec8` | Amethyst |
 | palette 14 (bright cyan) | `#5ed8c8` | Bright faience |
 | palette 15 (bright white) | `#e8e0d0` | Pure limestone |
+| cursor-color | `#d4a634` | Gold leaf |
+| cursor-text | `#0a0b14` | Background (inverted) |
+| selection-background | `#1a1e38` | Midnight stone |
+| selection-foreground | `#f0c848` | Sun gold |
 
 ## Shader: `night-temple.glsl`
 
@@ -137,11 +141,13 @@ Dim gold `\e[33m`, bright gold `\e[93m` (ANSI yellow slots, which render as gold
   - 91-99: RADIANT
 
 **𓎂 WARD — Protection glyph**
-- Cycles through 4 protection signs every 8 commands:
+- The `𓎂` before "WARD:" is a fixed label (always the sa protection sign).
+- The *value* after the colon cycles through 4 ward glyphs every 8 commands:
   - 𓎂 (sa — protection)
   - 𓏴𓏏𓊮 (sDt — fire ward)
   - 𓆓𓏤 (Dt — cobra ward)
   - 𓁹 (irt — eye ward)
+- When the value is also 𓎂, the display reads `[𓎂 WARD:𓎂]` — this is intentional (doubled protection sign = strong ward).
 
 **𓁹 EYE — Eye of Horus watchfulness**
 - Random walk: 20-99, drift -2 to +2 per command
