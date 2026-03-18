@@ -12,6 +12,7 @@ Each theme is a color palette + GLSL shader pair. Drop matching files in `themes
 | **feline-homunculus** | Cat-creature lost in rainy Tokyo. Rain on glass, neon bleed, wet pavement reflections. |
 | **electrode-shaper** | Cyberpunk CRT plasma lab. Electrode arcs, EMF interference, violet-cyan plasma field. |
 | **deep-drift** | USS Erebus, 30 years adrift. Degraded amber phosphor CRT, radiation static, burn-in. |
+| **night-temple** | Egyptian night ritual. Torchlit temple, starfield, Nile reflections, hieroglyphic prompt. |
 
 Every shader includes a subliminal **40 Hz gamma entrainment** layer — a sinusoidal brightness pulse at the gamma brainwave frequency, weighted toward peripheral vision. Below conscious flicker fusion, but the visual cortex still entrains. Focus mode.
 
@@ -56,6 +57,7 @@ source ~/.config/ghostty/prompts/deep-drift.sh
 | **street-shaman** | Occult ritual terminal | WARD%, encounters, moon phase |
 | **feline-homunculus** | Tokyo street navigation | District, rain, neon%, alley depth |
 | **electrode-shaper** | Lab instrument readout | PLASMA%, EMF, arcs, frequency |
+| **night-temple** | Hieroglyphic temple ritual | 𓇳 Hour, 𓂓 KA strength, 𓎂 ward glyph, 𓁹 Eye of Horus |
 
 The launcher prints a source hint when switching themes.
 
@@ -90,6 +92,7 @@ themes/
   feline-homunculus             # Color palette
   electrode-shaper              # Color palette
   deep-drift                    # Color palette
+  night-temple                  # Color palette
 shaders/
   street-shaman.glsl            # Full: fire + smoke + entrainment
   street-shaman-lite.glsl       # Lite: firelight + bottom glow
@@ -103,9 +106,13 @@ shaders/
   deep-drift.glsl               # Full: CRT + radiation + wobble
   deep-drift-lite.glsl          # Lite: CRT + burn-in
   deep-drift-static.glsl        # Static: CRT + burn-in
+  night-temple.glsl             # Full: torches + stars + Nile
+  night-temple-lite.glsl        # Lite: torches + vignette
+  night-temple-static.glsl      # Static: stone vignette only
 prompts/
   deep-drift.sh                 # USS Erebus console prompt
   street-shaman.sh              # Occult ritual prompt
   feline-homunculus.sh          # Tokyo navigation prompt
   electrode-shaper.sh           # Lab instrument prompt
+  night-temple.sh               # Hieroglyphic temple prompt
 ```
