@@ -41,13 +41,15 @@ const float bayer4x4[16] = float[16](
     15.0/16.0,  7.0/16.0, 13.0/16.0,  5.0/16.0
 );
 
-// Ordered-dither palette quantization — 6 steps per channel (VGA-era)
+// Ordered-dither palette quantization — 6 quantization levels per channel.
+// DIVISOR is (levels - 1), so floor(c * DIVISOR + 0.5) / DIVISOR snaps to
+// 6 evenly spaced values: {0, 1/5, 2/5, 3/5, 4/5, 1}.
 vec3 ditherQuantize(vec3 color, vec2 fragCoord) {
     ivec2 bc = ivec2(mod(fragCoord, 4.0));
     float threshold = bayer4x4[bc.y * 4 + bc.x];
-    const float STEPS = 5.0;
-    vec3 biased = color + (threshold - 0.5) / STEPS;
-    return floor(biased * STEPS + 0.5) / STEPS;
+    const float DIVISOR = 5.0;
+    vec3 biased = color + (threshold - 0.5) / DIVISOR;
+    return floor(biased * DIVISOR + 0.5) / DIVISOR;
 }
 
 // ---------------------------------------------------------------------------
@@ -58,8 +60,8 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     vec2 uv = fragCoord / iResolution.xy;
 
     // Sample terminal content
-    vec3 cleanText = texture(iChannel0, uv).rgb;
-    float alpha = texture(iChannel0, uv).a;
+    vec4 clean      = texture(iChannel0, uv);
+    vec3 cleanText  = clean.rgb;
 
     // Text detection — luma mask protects text from CRT effects
     float luma = dot(cleanText, vec3(0.2126, 0.7152, 0.0722));
@@ -89,5 +91,5 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     color = clamp(color, 0.0, 1.0);
     color = mix(color, cleanText, textMask);
 
-    fragColor = vec4(color, alpha);
+    fragColor = vec4(color, clean.a);
 }
