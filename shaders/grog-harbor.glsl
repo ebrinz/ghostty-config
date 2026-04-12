@@ -131,6 +131,16 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // --- Scanlines: 12% darkening on alternating rows ---
     color *= 1.0 - 0.12 * mod(floor(fragCoord.y), 2.0);
 
+    // --- Layer 5: Torch flicker — warm pulse weighted to top of screen ---
+    float torchNoise1 = noise(vec2(iTime * 0.7, 0.0));
+    float torchNoise2 = noise(vec2(iTime * 1.3, 17.0));
+    float torch = (torchNoise1 * 0.7 + torchNoise2 * 0.3);
+    float topWeight = smoothstep(0.6, 1.0, uv.y); // strongest near top
+    float flickerAmp = 0.035 * topWeight;
+    vec3 torchTint = vec3(1.08, 1.02, 0.92); // warm orange tint
+    color *= mix(vec3(1.0), torchTint, torch * topWeight);
+    color *= 1.0 + (torch - 0.5) * flickerAmp;
+
     // --- Vignette: midnight harbor darkness at screen edges ---
     vec2 centered = uv - 0.5;
     float dist = length(centered);
