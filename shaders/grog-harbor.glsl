@@ -75,6 +75,19 @@ vec2 moonRipple(vec2 uv, float t) {
 }
 
 // ---------------------------------------------------------------------------
+// Layer 4a: Chromatic aberration — red drifts outward from screen center
+// ---------------------------------------------------------------------------
+
+vec3 sampleAberrated(vec2 uv) {
+    vec2 dir = normalize(uv - 0.5 + vec2(1e-6));
+    float amt = 0.0015;
+    float r = texture(iChannel0, uv + dir * amt).r;
+    float g = texture(iChannel0, uv).g;
+    float b = texture(iChannel0, uv - dir * amt * 0.5).b;
+    return vec3(r, g, b);
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -89,17 +102,28 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float luma = dot(cleanText, vec3(0.2126, 0.7152, 0.0722));
     float textMask = smoothstep(0.05, 0.12, luma);
 
-    vec3 color = cleanText;
+    vec3 color = sampleAberrated(uv);
 
     // --- Layer 1: Moonlit water ripples ---
     vec2 ripple = moonRipple(uv, iTime);
     if (ripple.y > 0.0 || ripple.x != 0.0) {
         // Resample the terminal color with vertical displacement
         vec2 sampleUV = uv + vec2(0.0, ripple.x);
-        color = texture(iChannel0, sampleUV).rgb;
+        color = sampleAberrated(sampleUV);
         // Add moonlit cyan highlight on the water
         color += vec3(0.15, 0.35, 0.55) * ripple.y;
     }
+
+    // --- Layer 4b: Phosphor bloom — soft warm glow around bright pixels ---
+    vec3 bloom = vec3(0.0);
+    float bloomRadius = 0.003;
+    bloom += texture(iChannel0, uv + vec2( bloomRadius, 0.0)).rgb;
+    bloom += texture(iChannel0, uv + vec2(-bloomRadius, 0.0)).rgb;
+    bloom += texture(iChannel0, uv + vec2(0.0,  bloomRadius)).rgb;
+    bloom += texture(iChannel0, uv + vec2(0.0, -bloomRadius)).rgb;
+    bloom *= 0.25;
+    float bloomLuma = dot(bloom, vec3(0.2126, 0.7152, 0.0722));
+    color += bloom * smoothstep(0.3, 0.8, bloomLuma) * 0.15;
 
     // --- Bayer Dither: VGA 256-color ordered quantization ---
     color = ditherQuantize(color, fragCoord);
