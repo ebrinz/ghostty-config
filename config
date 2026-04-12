@@ -1,4 +1,4 @@
-# Night Temple (full)
-theme = night-temple
-custom-shader = /Users/crashy/.config/ghostty/shaders/night-temple.glsl
+# Grog Harbor
+theme = grog-harbor
+custom-shader = /Users/crashy/.config/ghostty/shaders/grog-harbor.glsl
 custom-shader-animation = true
