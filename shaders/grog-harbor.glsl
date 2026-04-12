@@ -53,6 +53,28 @@ vec3 ditherQuantize(vec3 color, vec2 fragCoord) {
 }
 
 // ---------------------------------------------------------------------------
+// Layer 1: Moonlit water ripples — bottom 35% of screen
+// Returns (vertical displacement, cyan highlight strength) packed as vec2.
+// ---------------------------------------------------------------------------
+
+vec2 moonRipple(vec2 uv, float t) {
+    float zone = smoothstep(0.0, 0.10, 0.35 - uv.y); // 0 above 0.35, 1 well below
+    if (zone <= 0.0) return vec2(0.0);
+
+    // Slow horizontal sine bands, phase drifts with time
+    float band1 = sin(uv.y * 80.0 + t * 0.6) * 0.5;
+    float band2 = sin(uv.y * 140.0 - t * 0.4 + uv.x * 3.0) * 0.3;
+    float disp = (band1 + band2) * zone * 0.003; // vertical uv displacement
+
+    // Moonlight highlight streaks — brighter bands where the moon reflects
+    float streak = sin(uv.y * 30.0 - t * 0.3) * 0.5 + 0.5;
+    streak = pow(streak, 4.0);
+    float highlight = streak * zone * 0.25;
+
+    return vec2(disp, highlight);
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -68,6 +90,16 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float textMask = smoothstep(0.05, 0.12, luma);
 
     vec3 color = cleanText;
+
+    // --- Layer 1: Moonlit water ripples ---
+    vec2 ripple = moonRipple(uv, iTime);
+    if (ripple.y > 0.0 || ripple.x != 0.0) {
+        // Resample the terminal color with vertical displacement
+        vec2 sampleUV = uv + vec2(0.0, ripple.x);
+        color = texture(iChannel0, sampleUV).rgb;
+        // Add moonlit cyan highlight on the water
+        color += vec3(0.15, 0.35, 0.55) * ripple.y;
+    }
 
     // --- Bayer Dither: VGA 256-color ordered quantization ---
     color = ditherQuantize(color, fragCoord);
