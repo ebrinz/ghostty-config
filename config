@@ -1,4 +1,4 @@
-# Grog Harbor
-theme = grog-harbor
-custom-shader = /Users/crashy/.config/ghostty/shaders/grog-harbor.glsl
+# Street Shaman (lite)
+theme = street-shaman
+custom-shader = /Users/crashy/.config/ghostty/shaders/street-shaman-lite.glsl
 custom-shader-animation = true
