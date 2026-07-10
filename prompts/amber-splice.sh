@@ -45,7 +45,7 @@ _amber_splice_precmd() {
     local strain="${_AS_STRAINS[$strain_idx]}"
 
     # Build the prompt
-    local line1="${_AS_DIM}┌─${_AS_BRIGHT}⌬${_AS_DIM}─[${_AS_BRIGHT}AMBER FIELD LAB${_AS_DIM}]─[${_AS_BRIGHT}SITE·B${_AS_DIM}]─[${_AS_BRIGHT}SEQ ${_AS_SEQ}%${_AS_DIM}]─[${_AS_BRIGHT}VIABILITY:${_AS_VIABILITY}%${_AS_DIM}]─[${_AS_CYAN}SPLICE:${strain}${_AS_DIM}]─${_AS_BRIGHT}⌬${_AS_DIM}─${_AS_RESET}"
+    local line1="${_AS_DIM}┌─${_AS_BRIGHT}⌬${_AS_DIM}─[${_AS_BRIGHT}AMBER FIELD LAB${_AS_DIM}]─[${_AS_BRIGHT}SITE·B${_AS_DIM}]─[${_AS_BRIGHT}SEQ ${_AS_SEQ}%%${_AS_DIM}]─[${_AS_BRIGHT}VIABILITY:${_AS_VIABILITY}%%${_AS_DIM}]─[${_AS_CYAN}SPLICE:${strain}${_AS_DIM}]─${_AS_BRIGHT}⌬${_AS_DIM}─${_AS_RESET}"
     local line2="${_AS_DIM}└─${_AS_BRIGHT}⌖ ${_AS_RESET}%n@lab:%~ ${_AS_BRIGHT}\$ ${_AS_RESET}"
 
     PROMPT=$'\n'"${line1}"$'\n'"${line2}"
