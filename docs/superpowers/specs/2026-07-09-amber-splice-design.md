@@ -158,8 +158,10 @@ vec3 alienCyan = vec3(0.25, 0.85, 0.90);
 color += alienCyan * glowC * 0.07 * alienPulse;
 
 // traveling splice pulse (blue-white flare running up the helix)
+// NOTE: square by multiplication, not pow() — GLSL pow(x,y) is undefined for x<0.
 float pulseY = fract(time * 0.18);
-float pulse  = exp(-pow((uv.y - pulseY) * 6.0, 2.0));
+float pd     = (uv.y - pulseY) * 6.0;
+float pulse  = exp(-pd * pd);
 vec3 spliceWhite = vec3(0.7, 0.9, 1.0);
 color += spliceWhite * pulse * (glowA + glowB + glowC * 1.5) * 0.5;
 ```
