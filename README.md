@@ -13,8 +13,22 @@ Each theme is a color palette + GLSL shader pair. Drop matching files in `themes
 | **electrode-shaper** | Cyberpunk CRT plasma lab. Electrode arcs, EMF interference, violet-cyan plasma field. |
 | **deep-drift** | USS Erebus, 30 years adrift. Degraded amber phosphor CRT, radiation static, burn-in. |
 | **night-temple** | Egyptian night ritual. Torchlit temple, starfield, Nile reflections, hieroglyphic prompt. |
+| **entropy-field** | Realtime RNG observatory. Quantum foam, falling bit-rain, turquoise/gold sampling lattice. Backdrop for the **ghostty-rng** app. |
 
-Every shader includes a subliminal **40 Hz gamma entrainment** layer — a sinusoidal brightness pulse at the gamma brainwave frequency, weighted toward peripheral vision. Below conscious flicker fusion, but the visual cortex still entrains. Focus mode.
+Every shader **except entropy-field** includes a subliminal **40 Hz gamma entrainment** layer — a sinusoidal brightness pulse at the gamma brainwave frequency, weighted toward peripheral vision. Below conscious flicker fusion, but the visual cortex still entrains. Focus mode. (entropy-field is a data-visualization backdrop rather than a focus-mode theme, so it omits the pulse to keep the charts honest.)
+
+### entropy-field → ghostty-rng
+
+`entropy-field` is the visual companion to **ghostty-rng**, a realtime hardware-entropy observatory for [TrueRNG](https://ubld.it/) devices — it streams the RNG and renders a live Shannon-entropy curve against the 8.0 bits/byte baseline, NIST-style randomness tests (monobit, chi-square, serial correlation, min-entropy), and a truecolor bitstream.
+
+The app is a standalone Rust project (`~/Development/ghostty-rng`); this repo carries only its theme + shaders. To run it:
+
+```bash
+ghostty entropy-field          # apply the backdrop (or --lite / --static)
+ghostty-rng                    # then launch the observatory
+# …or, from the app repo, one shot in a fresh window:
+~/Development/ghostty-rng/run.sh
+```
 
 ## Power Tiers
 
@@ -93,6 +107,7 @@ themes/
   electrode-shaper              # Color palette
   deep-drift                    # Color palette
   night-temple                  # Color palette
+  entropy-field                 # Color palette (pairs with the ghostty-rng app)
 shaders/
   street-shaman.glsl            # Full: fire + smoke + entrainment
   street-shaman-lite.glsl       # Lite: firelight + bottom glow
@@ -109,6 +124,9 @@ shaders/
   night-temple.glsl             # Full: torches + stars + Nile
   night-temple-lite.glsl        # Lite: torches + vignette
   night-temple-static.glsl      # Static: stone vignette only
+  entropy-field.glsl            # Full: quantum foam + bit-rain + sampling lattice
+  entropy-field-lite.glsl       # Lite: fewer octaves, gentler motion
+  entropy-field-static.glsl     # Static: frozen field, no animation
 prompts/
   deep-drift.sh                 # USS Erebus console prompt
   street-shaman.sh              # Occult ritual prompt
