@@ -14,8 +14,13 @@ Each theme is a color palette + GLSL shader pair. Drop matching files in `themes
 | **deep-drift** | USS Erebus, 30 years adrift. Degraded amber phosphor CRT, radiation static, burn-in. |
 | **night-temple** | Egyptian night ritual. Torchlit temple, starfield, Nile reflections, hieroglyphic prompt. |
 | **entropy-field** | Realtime RNG observatory. Quantum foam, falling bit-rain, turquoise/gold sampling lattice. Backdrop for the **ghostty-rng** app. |
+| **ghost-in-the-machine** | Spectral cyberpunk séance. Ectoplasmic vapor, jittering Fuller geodesic lattice, matrix code-rain, rare magenta Snow Crash glitch bursts. |
 
-Every shader **except entropy-field** includes a subliminal **40 Hz gamma entrainment** layer — a sinusoidal brightness pulse at the gamma brainwave frequency, weighted toward peripheral vision. Below conscious flicker fusion, but the visual cortex still entrains. Focus mode. (entropy-field is a data-visualization backdrop rather than a focus-mode theme, so it omits the pulse to keep the charts honest.)
+Every shader **except entropy-field and ghost-in-the-machine** includes a subliminal **40 Hz gamma entrainment** layer — a sinusoidal brightness pulse at the gamma brainwave frequency, weighted toward peripheral vision. Below conscious flicker fusion, but the visual cortex still entrains. Focus mode. (entropy-field is a data-visualization backdrop rather than a focus-mode theme, so it omits the pulse to keep the charts honest; ghost-in-the-machine has its own glitch-burst rhythm instead.)
+
+### ghost-in-the-machine → emergent CA
+
+ghost-in-the-machine ships a fourth shader variant, `ghost-in-the-machine-nca.glsl`: true Conway Life (B3/S23) computed via the light-cone trick — Ghostty shaders are stateless, so each frame recomputes N generations from an epoch-seeded grid. Colonies emerge, evolve, and fade every 24 s; births flash white, deaths ghost out magenta. Heaviest shader in the collection.
 
 ### entropy-field → ghostty-rng
 
@@ -108,6 +113,7 @@ themes/
   deep-drift                    # Color palette
   night-temple                  # Color palette
   entropy-field                 # Color palette (pairs with the ghostty-rng app)
+  ghost-in-the-machine          # Color palette
 shaders/
   street-shaman.glsl            # Full: fire + smoke + entrainment
   street-shaman-lite.glsl       # Lite: firelight + bottom glow
@@ -127,6 +133,10 @@ shaders/
   entropy-field.glsl            # Full: quantum foam + bit-rain + sampling lattice
   entropy-field-lite.glsl       # Lite: fewer octaves, gentler motion
   entropy-field-static.glsl     # Static: frozen field, no animation
+  ghost-in-the-machine.glsl     # Full: vapor + geodesic lattice + code-rain + glitch
+  ghost-in-the-machine-lite.glsl   # Lite: vapor + code-rain
+  ghost-in-the-machine-static.glsl # Static: frozen vapor + lattice
+  ghost-in-the-machine-nca.glsl    # CA: true Conway Life via light-cone recompute
 prompts/
   deep-drift.sh                 # USS Erebus console prompt
   street-shaman.sh              # Occult ritual prompt
