@@ -1,4 +1,4 @@
-# Street Shaman (lite)
-theme = street-shaman
-custom-shader = /Users/crashy/.config/ghostty/shaders/street-shaman-lite.glsl
+# Ghost in the Machine (full)
+theme = ghost-in-the-machine
+custom-shader = /Users/crashy/.config/ghostty/shaders/ghost-in-the-machine.glsl
 custom-shader-animation = true
