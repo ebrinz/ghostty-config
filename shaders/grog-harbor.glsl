@@ -1,0 +1,161 @@
+// grog-harbor.glsl
+// Theme: Melee Island Dock at Midnight — LucasArts SCUMM Era, 1992
+// The harbor at night: salt air, creaking wood, the Scumm Bar lantern glow.
+// VGA 256-color Bayer ordered dither on a 1992 CRT phosphor display.
+// Foundation layers: Bayer 4x4 dither, scanlines, vignette, 40Hz gamma
+// entrainment, and text protection. Extended layers added in later tasks.
+
+const float PI = 3.14159265359;
+const float GAMMA_HZ = 40.0;
+const float GAMMA_AMP = 0.035;
+
+// ---------------------------------------------------------------------------
+// Noise utilities
+// ---------------------------------------------------------------------------
+
+float hash21(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
+
+float noise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    float a = hash21(i + vec2(0.0, 0.0));
+    float b = hash21(i + vec2(1.0, 0.0));
+    float c = hash21(i + vec2(0.0, 1.0));
+    float d = hash21(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+// ---------------------------------------------------------------------------
+// Bayer 4x4 ordered dither — VGA palette quantization
+// ---------------------------------------------------------------------------
+
+const float bayer4x4[16] = float[16](
+     0.0/16.0,  8.0/16.0,  2.0/16.0, 10.0/16.0,
+    12.0/16.0,  4.0/16.0, 14.0/16.0,  6.0/16.0,
+     3.0/16.0, 11.0/16.0,  1.0/16.0,  9.0/16.0,
+    15.0/16.0,  7.0/16.0, 13.0/16.0,  5.0/16.0
+);
+
+// Ordered-dither palette quantization — 6 quantization levels per channel.
+// DIVISOR is (levels - 1), so floor(c * DIVISOR + 0.5) / DIVISOR snaps to
+// 6 evenly spaced values: {0, 1/5, 2/5, 3/5, 4/5, 1}.
+vec3 ditherQuantize(vec3 color, vec2 fragCoord) {
+    ivec2 bc = ivec2(mod(fragCoord, 4.0));
+    float threshold = bayer4x4[bc.y * 4 + bc.x];
+    const float DIVISOR = 5.0;
+    vec3 biased = color + (threshold - 0.5) / DIVISOR;
+    return floor(biased * DIVISOR + 0.5) / DIVISOR;
+}
+
+// ---------------------------------------------------------------------------
+// Layer 1: Moonlit water ripples — bottom 35% of screen
+// Returns (vertical displacement, cyan highlight strength) packed as vec2.
+// ---------------------------------------------------------------------------
+
+vec2 moonRipple(vec2 uv, float t) {
+    float zone = smoothstep(0.0, 0.10, 0.35 - uv.y); // 0 above 0.35, 1 well below
+    if (zone <= 0.0) return vec2(0.0);
+
+    // Slow horizontal sine bands, phase drifts with time
+    float band1 = sin(uv.y * 80.0 + t * 0.6) * 0.5;
+    float band2 = sin(uv.y * 140.0 - t * 0.4 + uv.x * 3.0) * 0.3;
+    float disp = (band1 + band2) * zone * 0.003; // vertical uv displacement
+
+    // Moonlight highlight streaks — brighter bands where the moon reflects
+    float streak = sin(uv.y * 30.0 - t * 0.3) * 0.5 + 0.5;
+    streak = pow(streak, 4.0);
+    float highlight = streak * zone * 0.25;
+
+    return vec2(disp, highlight);
+}
+
+// ---------------------------------------------------------------------------
+// Layer 4a: Chromatic aberration — red drifts outward from screen center
+// ---------------------------------------------------------------------------
+
+vec3 sampleAberrated(vec2 uv) {
+    vec2 dir = normalize(uv - 0.5 + vec2(1e-6));
+    float amt = 0.0015;
+    float r = texture(iChannel0, uv + dir * amt).r;
+    float g = texture(iChannel0, uv).g;
+    float b = texture(iChannel0, uv - dir * amt * 0.5).b;
+    return vec3(r, g, b);
+}
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
+
+void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+    vec2 uv = fragCoord / iResolution.xy;
+
+    // Sample terminal content
+    vec4 clean      = texture(iChannel0, uv);
+    vec3 cleanText  = clean.rgb;
+
+    // Text detection — luma mask protects text from CRT effects
+    float luma = dot(cleanText, vec3(0.2126, 0.7152, 0.0722));
+    float textMask = smoothstep(0.05, 0.12, luma);
+
+    vec3 color = sampleAberrated(uv);
+
+    // --- Layer 1: Moonlit water ripples ---
+    vec2 ripple = moonRipple(uv, iTime);
+    if (ripple.y > 0.0 || ripple.x != 0.0) {
+        // Resample the terminal color with vertical displacement
+        vec2 sampleUV = uv + vec2(0.0, ripple.x);
+        color = sampleAberrated(sampleUV);
+        // Add moonlit cyan highlight on the water
+        color += vec3(0.15, 0.35, 0.55) * ripple.y;
+    }
+
+    // --- Layer 4b: Phosphor bloom — soft warm glow around bright pixels ---
+    vec3 bloom = vec3(0.0);
+    float bloomRadius = 0.003;
+    bloom += texture(iChannel0, uv + vec2( bloomRadius, 0.0)).rgb;
+    bloom += texture(iChannel0, uv + vec2(-bloomRadius, 0.0)).rgb;
+    bloom += texture(iChannel0, uv + vec2(0.0,  bloomRadius)).rgb;
+    bloom += texture(iChannel0, uv + vec2(0.0, -bloomRadius)).rgb;
+    bloom *= 0.25;
+    float bloomLuma = dot(bloom, vec3(0.2126, 0.7152, 0.0722));
+    color += bloom * smoothstep(0.3, 0.8, bloomLuma) * 0.15;
+
+    // --- Bayer Dither: VGA 256-color ordered quantization ---
+    color = ditherQuantize(color, fragCoord);
+
+    // --- Scanlines: 12% darkening on alternating rows ---
+    color *= 1.0 - 0.12 * mod(floor(fragCoord.y), 2.0);
+
+    // --- Layer 5: Torch flicker — warm pulse weighted to top of screen ---
+    float torchNoise1 = noise(vec2(iTime * 0.7, 0.0));
+    float torchNoise2 = noise(vec2(iTime * 1.3, 17.0));
+    float torch = (torchNoise1 * 0.7 + torchNoise2 * 0.3);
+    float topWeight = smoothstep(0.6, 1.0, uv.y); // strongest near top
+    float flickerAmp = 0.035 * topWeight;
+    vec3 torchTint = vec3(1.08, 1.02, 0.92); // warm orange tint
+    color *= mix(vec3(1.0), torchTint, torch * topWeight);
+    color *= 1.0 + (torch - 0.5) * flickerAmp;
+
+    // --- Vignette: midnight harbor darkness at screen edges ---
+    vec2 centered = uv - 0.5;
+    float dist = length(centered);
+    float v = smoothstep(0.85, 0.35, dist);
+    v = mix(0.60, 1.0, v);
+    color *= v;
+
+    // --- 40Hz Gamma Entrainment: periphery flicker ---
+    float gamma = sin(2.0 * PI * GAMMA_HZ * iTime);
+    float peripheryWeight = smoothstep(0.15, 0.5, dist);
+    color *= 1.0 + GAMMA_AMP * gamma * peripheryWeight;
+
+    // --- Text Protection: restore clean text after CRT effects ---
+    color = clamp(color, 0.0, 1.0);
+    color = mix(color, cleanText, textMask);
+
+    fragColor = vec4(color, clean.a);
+}
