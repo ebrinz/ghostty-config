@@ -5,6 +5,13 @@
 // CRT artifacts, phosphor burn-in, power supply flicker, radiation static,
 // H-sync wobble, vignette, 40 Hz gamma entrainment, and text protection.
 //
+// Scene: the console's forward sensor view behind the text, all in amber
+// phosphor and curved with the tube. A slowly tumbling parallax starfield,
+// the dark limb of a dead planet crossing the lower right, wireframe debris
+// drifting past with sensor tags, a navigation reticle with roll marker and
+// range rings, a compass tape along the top, telemetry readouts ticking in
+// the corners, and a target bracket wherever the cursor lands.
+//
 // Interaction (Ghostty 1.4 uniforms):
 //   cursor — slow amber phosphor. The cursor leaves a ghost of itself at its
 //            previous position that decays over ~1.4 s, with a faint smear
@@ -119,6 +126,142 @@ float radiationBurst(vec2 uv, float time) {
 }
 
 // ---------------------------------------------------------------------------
+// Forward sensor view. `q` is square-space (uv.x * aspect, uv.y) of the
+// barrel-distorted uv, so everything curves with the tube. `pxl` is the size
+// of one device pixel in q units. All returns are amber intensities 0..1.
+// ---------------------------------------------------------------------------
+
+mat2 rot2(float a) { float c = cos(a), s = sin(a); return mat2(c, -s, s, c); }
+
+// The ship's slow tumble: a drift angle with a long wobble.
+float tumble(float t) { return t * 0.003 + 0.12 * sin(t * 0.05); }
+
+// Three parallax layers of phosphor stars, drifting and tumbling.
+float starField(vec2 q, float aspect, float t, float pxl) {
+    vec2 c = vec2(aspect * 0.5, 0.5);
+    vec2 p = rot2(tumble(t)) * (q - c);
+    float acc = 0.0;
+    for (int i = 0; i < 3; i++) {
+        float fi = float(i);
+        float scale = 28.0 + fi * 30.0;
+        vec2 drift = vec2(0.004, 0.0025) * (1.0 + fi * 0.8) * t;
+        vec2 sp = (p + drift) * scale;
+        vec2 cell = floor(sp);
+        vec2 f = fract(sp) - 0.5;
+        float h = hash21(cell + fi * 101.0);
+        if (h < 0.965) continue;
+        vec2 off = (vec2(hash21(cell + 3.0), hash21(cell + 9.0)) - 0.5) * 0.6;
+        float d = length(f - off) / scale;                        // back to q units
+        float bright = mix(0.35, 1.0, hash21(cell + 17.0)) * (1.0 - fi * 0.25);
+        float core = smoothstep(pxl * 1.6, 0.0, d);
+        float bloom = smoothstep(pxl * 6.0, 0.0, d) * 0.25;
+        acc += (core + bloom) * bright;
+    }
+    return acc;
+}
+
+// Dead planet: a dark disc crossing the lower right with a thin lit limb.
+// Returns (body mask, limb glow).
+vec2 planet(vec2 q, float aspect, float t) {
+    vec2 c = vec2(aspect + 0.25 + 0.02 * sin(t * 0.010), 1.45 + 0.02 * cos(t * 0.013));
+    const float R = 0.95;
+    float d = length(q - c) - R;
+    float body = step(d, 0.0);
+    float limb = exp(-max(d, 0.0) * 55.0) * 0.9 + exp(-abs(d) * 220.0) * 0.6;
+    // a faint band of reflected light just inside the limb
+    limb += smoothstep(0.0, -0.06, d) * (1.0 - smoothstep(-0.06, -0.14, d)) * 0.12;
+    return vec2(body, limb);
+}
+
+// Tumbling debris: wireframe fragments drifting across over minutes, each
+// with a small sensor tag beside it. Returns (outline, tag).
+vec2 debris(vec2 q, float aspect, float t, float pxl) {
+    float outline = 0.0, tag = 0.0;
+    for (int i = 0; i < 4; i++) {
+        float fi = float(i);
+        float period = 180.0 + fi * 50.0;
+        float cyc = floor(t / period + fi * 0.37);
+        float ph = fract(t / period + fi * 0.37);
+        float h1 = hash21(vec2(cyc, fi)), h2 = hash21(vec2(cyc, fi + 50.0));
+        vec2 a = vec2(-0.1, mix(0.1, 0.9, h1));
+        vec2 b = vec2(aspect + 0.1, mix(0.1, 0.9, h2));
+        vec2 pos = mix(a, b, ph);
+        if (fi == 1.0 || fi == 3.0) pos.x = aspect - pos.x;             // some come from the right
+        vec2 p = rot2(t * (0.3 + h1 * 0.5) * ((fi < 2.0) ? 1.0 : -1.0)) * (q - pos);
+        vec2 sz = vec2(0.010 + 0.02 * h1, 0.006 + 0.012 * h2);
+        vec2 dd = abs(p) - sz;
+        float sd = length(max(dd, 0.0)) + min(max(dd.x, dd.y), 0.0);
+        outline += smoothstep(pxl * 1.4, 0.0, abs(sd)) * 0.9;
+        // a second, inner facet line
+        outline += smoothstep(pxl * 1.2, 0.0, abs(p.x * 0.7 + p.y * 0.3)) * step(sd, 0.0) * 0.5;
+        // tag: a small bracket and a two-block readout to the upper right
+        vec2 tp = q - (pos + vec2(sz.x + 0.012, -sz.y - 0.012));
+        float br = step(abs(tp.x), 0.006) * step(abs(tp.y), 0.004);
+        br *= step(0.004, abs(tp.x)) + step(0.0025, abs(tp.y));
+        tag += min(br, 1.0) * 0.6;
+        tag += step(abs(tp.x - 0.012), 0.0035) * step(abs(tp.y), 0.002) * step(0.5, hash21(vec2(floor(t * 2.0), fi))) * 0.6;
+    }
+    return vec2(min(outline, 1.0), min(tag, 1.0));
+}
+
+// Navigation reticle: circle with cardinal ticks, a roll marker riding the
+// ship's tumble, two faint dashed range rings.
+float reticle(vec2 q, float aspect, float t, float pxl) {
+    vec2 c = vec2(aspect * 0.5, 0.5);
+    vec2 p = q - c;
+    float r = length(p);
+    float acc = 0.0;
+    acc += smoothstep(pxl * 1.5, 0.0, abs(r - 0.12)) * 0.8;
+    // cardinal ticks outside the circle
+    float ang = atan(p.y, p.x);
+    float tick = smoothstep(pxl * 1.5, 0.0, min(abs(p.x), abs(p.y))) * step(0.125, r) * step(r, 0.15);
+    acc += tick * 0.8;
+    // roll marker: a small wedge on the circle at the tumble angle
+    vec2 m = c + vec2(cos(-1.5708 + tumble(t) * 20.0), sin(-1.5708 + tumble(t) * 20.0)) * 0.12;
+    acc += smoothstep(0.006, 0.0, length(q - m)) * 1.0;
+    // range rings, dashed by angle, very faint
+    float dash = step(0.5, fract(ang * 12.0 / 6.2832));
+    acc += smoothstep(pxl * 1.2, 0.0, abs(r - 0.30)) * dash * 0.3;
+    acc += smoothstep(pxl * 1.2, 0.0, abs(r - 0.45)) * (1.0 - dash) * 0.22;
+    // centre dot
+    acc += smoothstep(pxl * 2.0, 0.0, r) * 0.9;
+    return acc;
+}
+
+// Compass tape along the top: ticks scrolling with the drifting heading.
+float compassTape(vec2 q, float aspect, float t, float pxl) {
+    float y = 0.055;
+    float inBand = step(abs(q.y - y), 0.018);
+    float heading = t * 0.004 + 0.05 * sin(t * 0.03);
+    float x = q.x + heading;
+    float f = fract(x / 0.05);
+    float major = step(fract(x / 0.25), 0.05 / 0.25 + 0.001) * step(f, 0.5);
+    float tickH = mix(0.006, 0.014, major);
+    float tick = smoothstep(pxl * 1.3, 0.0, abs(f - 0.0) * 0.05) * step(abs(q.y - y), tickH);
+    tick = max(tick, smoothstep(pxl * 1.3, 0.0, (1.0 - f) * 0.05) * step(abs(q.y - y), tickH));
+    float line = smoothstep(pxl * 1.0, 0.0, abs(q.y - (y + 0.016)));
+    // lubber mark at centre
+    float lub = step(abs(q.x - aspect * 0.5), pxl * 1.5) * step(abs(q.y - y), 0.02);
+    return (tick * 0.7 + line * 0.35) * inBand + lub * 0.9;
+}
+
+// Telemetry: blocks of fake readouts. Characters are 3x5 cells of `blk`
+// device pixels; labels are static, values tick over every couple of seconds.
+float telemetry(vec2 pxc, vec2 origin, float rows, float cols, float t, float blk, float seed) {
+    vec2 g = floor((pxc - origin) / blk);
+    vec2 ch = floor(g / vec2(4.0, 7.0));                    // 3 wide + 1 gap, 5 tall + 2 gap
+    vec2 sub = mod(g, vec2(4.0, 7.0));
+    if (ch.x < 0.0 || ch.x >= cols || ch.y < 0.0 || ch.y >= rows) return 0.0;
+    if (sub.x > 2.0 || sub.y > 4.0) return 0.0;
+    float isValue = step(4.0, ch.x);                        // first 4 chars are a label
+    float clock = floor(t * mix(0.0, 0.5, isValue) + hash21(ch + seed) * 7.0);
+    float on = step(0.5, hash21(ch * 3.1 + sub * 7.7 + seed + clock * 13.0));
+    // a blank column between words
+    float gapCol = step(abs(ch.x - 4.0), 0.1);
+    return on * (1.0 - gapCol) * mix(0.6, 1.0, isValue);
+}
+
+// ---------------------------------------------------------------------------
 // Interaction helpers
 // iCurrentCursor / iPreviousCursor: xy = left edge and +Y edge in fragCoord
 // pixels, zw = size. Same convention as fragCoord on every backend.
@@ -201,6 +344,43 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // Text detection — protect text from effects
     float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
     float textMask = smoothstep(0.05, 0.12, luma);
+
+    // --- Forward sensor view: the console's navigation display behind the text ---
+    // Drawn in the barrel-distorted frame so it curves with the tube, before
+    // scanlines so it gets them too.
+    float aspect = iResolution.x / iResolution.y;
+    vec2 q = vec2(uv.x * aspect, uv.y);
+    float pxl = 1.0 / iResolution.y;
+    vec2 pxc = uv * iResolution.xy;
+    vec3 phosphorA = vec3(0.91, 0.63, 0.06);
+    float sensorLit = mix(0.45, 1.0, focused);
+    vec2 pl = planet(q, aspect, time);
+    float stars = starField(q, aspect, time, pxl) * (1.0 - pl.x);        // the planet occludes stars
+    vec2 db = debris(q, aspect, time, pxl);
+    float ret = reticle(q, aspect, time, pxl);
+    float tape = compassTape(q, aspect, time, pxl);
+    float blk = max(floor(cell / 7.0), 2.0);
+    float tele = telemetry(pxc, vec2(0.03, 0.80) * iResolution.xy, 5.0, 12.0, time, blk, 1.0)
+               + telemetry(pxc, vec2(0.76, 0.045) * iResolution.xy, 3.0, 11.0, time, blk, 2.0);
+    // target bracket where the cursor just landed: "acquiring"
+    float acq = smoothstep(0.7, 0.0, moveAge) * jumpGate;
+    if (acq > 0.001) {
+        vec2 tp = abs(fragCoord - curC);
+        vec2 half2 = vec2(cell * 1.1, cell * 0.8) * (1.0 + 0.6 * acq);
+        float onEdge = step(abs(max(tp.x - half2.x, tp.y - half2.y)), 1.2);
+        float corner = step(half2.x - cell * 0.5, tp.x) + step(half2.y - cell * 0.35, tp.y);
+        ret += onEdge * min(corner, 1.0) * acq * 1.2;
+    }
+    vec3 sensor = vec3(0.0);
+    sensor = mix(sensor, vec3(0.012, 0.009, 0.004), pl.x);              // planet body: darker than space
+    sensor += phosphorA * pl.y * 0.22;
+    sensor += phosphorA * stars * 0.55;
+    sensor += phosphorA * (db.x * 0.45 + db.y * 0.5);
+    sensor += phosphorA * ret * 0.32;
+    sensor += phosphorA * tape * 0.30;
+    sensor += phosphorA * tele * 0.28;
+    color = mix(color, sensor, pl.x * 0.6 * (1.0 - textMask));          // the planet darkens the background
+    color += (sensor - vec3(0.012, 0.009, 0.004) * pl.x) * sensorLit;
 
     // Scanlines — thick, old hardware (20% darkening; 35% in standby)
     float scanline = 1.0 - mix(0.20, 0.35, standby) * mod(floor(fragCoord.y), 2.0);

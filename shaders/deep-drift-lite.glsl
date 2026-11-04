@@ -6,6 +6,8 @@
 // Interaction: amber phosphor ghost at the cursor's previous position and a
 // bloom on the current one; unfocused is standby (half brightness); focus
 // gain is a CRT power-on raster unfold.
+// Scene (lite): tumbling parallax starfield, the dead planet's limb, the
+// navigation reticle. No debris, tape, or telemetry.
 
 const float PI = 3.14159265359;
 const float GAMMA_HZ = 40.0;
@@ -48,6 +50,79 @@ float burnIn(vec2 uv) {
     burn += cursorX * cursorY * 0.05;
 
     return burn;
+}
+
+// --- Forward sensor view helpers (see deep-drift.glsl) ---
+float hash21(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
+
+mat2 rot2(float a) { float c = cos(a), s = sin(a); return mat2(c, -s, s, c); }
+
+// The ship's slow tumble: a drift angle with a long wobble.
+float tumble(float t) { return t * 0.003 + 0.12 * sin(t * 0.05); }
+
+// Three parallax layers of phosphor stars, drifting and tumbling.
+float starField(vec2 q, float aspect, float t, float pxl) {
+    vec2 c = vec2(aspect * 0.5, 0.5);
+    vec2 p = rot2(tumble(t)) * (q - c);
+    float acc = 0.0;
+    for (int i = 0; i < 3; i++) {
+        float fi = float(i);
+        float scale = 28.0 + fi * 30.0;
+        vec2 drift = vec2(0.004, 0.0025) * (1.0 + fi * 0.8) * t;
+        vec2 sp = (p + drift) * scale;
+        vec2 cell = floor(sp);
+        vec2 f = fract(sp) - 0.5;
+        float h = hash21(cell + fi * 101.0);
+        if (h < 0.965) continue;
+        vec2 off = (vec2(hash21(cell + 3.0), hash21(cell + 9.0)) - 0.5) * 0.6;
+        float d = length(f - off) / scale;                        // back to q units
+        float bright = mix(0.35, 1.0, hash21(cell + 17.0)) * (1.0 - fi * 0.25);
+        float core = smoothstep(pxl * 1.6, 0.0, d);
+        float bloom = smoothstep(pxl * 6.0, 0.0, d) * 0.25;
+        acc += (core + bloom) * bright;
+    }
+    return acc;
+}
+
+// Dead planet: a dark disc crossing the lower right with a thin lit limb.
+// Returns (body mask, limb glow).
+vec2 planet(vec2 q, float aspect, float t) {
+    vec2 c = vec2(aspect + 0.25 + 0.02 * sin(t * 0.010), 1.45 + 0.02 * cos(t * 0.013));
+    const float R = 0.95;
+    float d = length(q - c) - R;
+    float body = step(d, 0.0);
+    float limb = exp(-max(d, 0.0) * 55.0) * 0.9 + exp(-abs(d) * 220.0) * 0.6;
+    // a faint band of reflected light just inside the limb
+    limb += smoothstep(0.0, -0.06, d) * (1.0 - smoothstep(-0.06, -0.14, d)) * 0.12;
+    return vec2(body, limb);
+}
+
+// Navigation reticle: circle with cardinal ticks, a roll marker riding the
+// ship's tumble, two faint dashed range rings.
+float reticle(vec2 q, float aspect, float t, float pxl) {
+    vec2 c = vec2(aspect * 0.5, 0.5);
+    vec2 p = q - c;
+    float r = length(p);
+    float acc = 0.0;
+    acc += smoothstep(pxl * 1.5, 0.0, abs(r - 0.12)) * 0.8;
+    // cardinal ticks outside the circle
+    float ang = atan(p.y, p.x);
+    float tick = smoothstep(pxl * 1.5, 0.0, min(abs(p.x), abs(p.y))) * step(0.125, r) * step(r, 0.15);
+    acc += tick * 0.8;
+    // roll marker: a small wedge on the circle at the tumble angle
+    vec2 m = c + vec2(cos(-1.5708 + tumble(t) * 20.0), sin(-1.5708 + tumble(t) * 20.0)) * 0.12;
+    acc += smoothstep(0.006, 0.0, length(q - m)) * 1.0;
+    // range rings, dashed by angle, very faint
+    float dash = step(0.5, fract(ang * 12.0 / 6.2832));
+    acc += smoothstep(pxl * 1.2, 0.0, abs(r - 0.30)) * dash * 0.3;
+    acc += smoothstep(pxl * 1.2, 0.0, abs(r - 0.45)) * (1.0 - dash) * 0.22;
+    // centre dot
+    acc += smoothstep(pxl * 2.0, 0.0, r) * 0.9;
+    return acc;
 }
 
 // --- Interaction helpers (Ghostty 1.4 uniforms) ---
@@ -117,6 +192,19 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // Text detection
     float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
     float textMask = smoothstep(0.05, 0.12, luma);
+
+    // --- Forward sensor view (lite): stars, the planet's limb, the reticle ---
+    float aspect = iResolution.x / iResolution.y;
+    vec2 q = vec2(uv.x * aspect, uv.y);
+    float pxl = 1.0 / iResolution.y;
+    vec3 phosphorA = vec3(0.91, 0.63, 0.06);
+    float sensorLit = mix(0.45, 1.0, focused);
+    vec2 pl = planet(q, aspect, time);
+    float stars = starField(q, aspect, time, pxl) * (1.0 - pl.x);
+    float ret = reticle(q, aspect, time, pxl);
+    vec3 sensor = phosphorA * (pl.y * 0.22 + stars * 0.55 + ret * 0.32);
+    color = mix(color, vec3(0.012, 0.009, 0.004), pl.x * 0.6 * (1.0 - textMask));
+    color += sensor * sensorLit;
 
     // Scanlines (deeper in standby)
     float scanline = 1.0 - mix(0.20, 0.35, standby) * mod(floor(fragCoord.y), 2.0);
