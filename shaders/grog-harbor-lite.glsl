@@ -1,7 +1,8 @@
 // grog-harbor-lite.glsl
 // Lite variant: Bayer dither + scanlines + vignette + 40Hz gamma + text protection.
 // Drops: moonlit water ripples, phosphor glow, chromatic aberration, torch flicker.
-// Keeps the scene: pixel-art waves along the bottom, palm fronds at the top corners.
+// Keeps a still version of the dock scene: sky, stars, moon, headland, waves,
+// pier planks, palm fronds. No ship, bar, lantern, or clouds.
 // Interaction: dithered lantern glow on the cursor that walks to new spots in
 // SCUMM 12 fps steps; unfocused, the palette drops to 4 levels and dims.
 // Target: integrated GPU, 60fps with headroom.
@@ -66,7 +67,7 @@ vec2 pixelWaves(vec2 fragCoord, vec2 res, float t) {
     float body = 0.0, crest = 0.0;
     for (int i = 0; i < 3; i++) {
         float fi = float(i);
-        float base  = nb.y * (0.80 + 0.07 * fi);           // wave midline (block row)
+        float base  = nb.y * (0.66 + 0.07 * fi);           // wave midline (block row), in the sea band
         float amp   = 1.5 + fi;                            // blocks
         float freq  = (0.045 - 0.008 * fi) * 6.2832;
         float speed = (0.9 - 0.2 * fi) * ((i == 1) ? -1.0 : 1.0);
@@ -114,6 +115,55 @@ float palmTops(vec2 fragCoord, vec2 res, float t) {
         m = max(m, frond(b, aR, 3.14159 - (0.2 + fi * 0.25 + sway), nb.x * 0.24 - fi * 4.0, -(0.9 + fi * 0.2)));
     }
     return m;
+}
+
+// ---------------------------------------------------------------------------
+// The dock scene, lite: sky, still stars, moon, sea with waves, pier planks.
+// Block pixel art, y down on Metal. No ship, bar, lantern, or clouds.
+// ---------------------------------------------------------------------------
+
+const float HORIZON = 0.56;
+const float PIER_Y  = 0.86;
+
+vec4 dockScene(vec2 fragCoord, vec2 res, float t, float lit) {
+    vec2 b  = floor(fragCoord / PX);
+    vec2 nb = floor(res / PX);
+    vec2 u  = (b + 0.5) / nb;
+    float ax = nb.x / nb.y;
+    vec3 col;
+
+    float skyT = clamp(u.y / HORIZON, 0.0, 1.0);
+    col = mix(vec3(0.02, 0.03, 0.10), vec3(0.08, 0.10, 0.28), skyT * skyT);
+    if (u.y < HORIZON - 0.03 && hash21(b) > 0.994) col += vec3(0.85, 0.90, 1.0) * 0.7;
+
+    vec2 moonC = vec2(0.80, 0.16);
+    float md = length((u - moonC) * vec2(ax, 1.0));
+    const float MR = 0.045;
+    col += vec3(0.25, 0.25, 0.35) * smoothstep(MR * 2.2, MR, md) * 0.35 * mix(0.5, 1.0, lit);
+    if (md < MR) {
+        float crater = step(0.93, hash21(floor(b / 2.0) + 7.0));
+        col = mix(vec3(0.92, 0.90, 0.78), vec3(0.70, 0.68, 0.56), crater) * mix(0.55, 1.0, lit);
+    }
+
+    float hx = clamp(u.x / 0.42, 0.0, 1.0);
+    float ridge = HORIZON - 0.20 * pow(1.0 - hx, 1.3) - 0.015 * hash21(vec2(floor(b.x / 3.0), 9.0));
+    if (u.x < 0.42 && u.y > ridge && u.y < HORIZON) col = vec3(0.03, 0.06, 0.08);
+
+    if (u.y >= HORIZON && u.y < PIER_Y) {
+        float depth = (u.y - HORIZON) / (PIER_Y - HORIZON);
+        col = mix(vec3(0.05, 0.10, 0.26), vec3(0.04, 0.08, 0.20), depth);
+        vec2 sea = pixelWaves(fragCoord, res, t);
+        col += vec3(0.06, 0.14, 0.32) * sea.x * 0.9;
+        col += vec3(0.35, 0.75, 0.80) * sea.y * 0.8;
+    }
+
+    if (u.y >= PIER_Y) {
+        float s = (u.y - PIER_Y) / (1.0 - PIER_Y);
+        float pk = pow(s, 0.7) * 9.0;
+        vec3 wood = mix(vec3(0.16, 0.10, 0.05), vec3(0.13, 0.08, 0.04), mod(floor(pk), 2.0));
+        col = mix(wood, vec3(0.05, 0.03, 0.02), step(fract(pk), 0.14));
+    }
+    return vec4(col, 1.0);
 }
 
 // iCurrentCursor / iPreviousCursor: xy = left edge and +Y edge in fragCoord
@@ -169,12 +219,12 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float asleep    = 1.0 - focused;
     float flare     = smoothstep(0.8, 0.05, focusAge) * focused;
 
-    // --- Layer 1b: Pixel-art sea along the bottom ---
-    vec2 sea = pixelWaves(fragCoord, iResolution.xy, iTime);
-    vec3 seaDeep  = vec3(0.06, 0.14, 0.32);
-    vec3 seaCrest = vec3(0.35, 0.75, 0.80);
-    color += seaDeep * sea.x * 0.18;
-    color += seaCrest * sea.y * 0.35;
+    // --- Layer 1b: The dock scene, composited over the terminal background ---
+    // SCENE_STRENGTH dials the whole picture; glyph pixels are excluded here
+    // and restored again at the end.
+    const float SCENE_STRENGTH = 0.9;
+    vec4 scene = dockScene(fragCoord, iResolution.xy, iTime, focused);
+    color = mix(color, scene.rgb, scene.a * SCENE_STRENGTH * (1.0 - textMask));
 
     // --- Layer 1c: Palm tops swaying in from the top corners ---
     float palms = palmTops(fragCoord, iResolution.xy, iTime);
