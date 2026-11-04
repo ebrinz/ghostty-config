@@ -88,7 +88,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     color.rgb *= edgeFactor;
 
     // --- 5. Green ambient glow at bottom edge (fire below) ---
-    float bottomGlow = (1.0 - uv.y) * (1.0 - uv.y);
+    float bottomGlow = uv.y * uv.y;   // fire below: the bottom of the screen (y down)
     float glowPulse = 0.5 + 0.5 * sin(time * 1.2);
     vec3 fireGlow = vec3(0.0, 0.12, 0.03) * bottomGlow * mix(0.3, 0.6, glowPulse);
     fireGlow *= mix(1.0, 0.35, embers) + flare * 2.5;

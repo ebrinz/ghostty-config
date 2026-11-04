@@ -4,6 +4,8 @@
 // Effects: torch flicker (2 noise calls), stone vignette, 40Hz gamma, text protection.
 // Interaction: gold lamp glow on the cursor, ember comet on jumps of 2+
 // cells; unfocused, the braziers burn low; focus gain flares them.
+// Scene (lite): two fluted columns with hieroglyph bands, a flagstone floor,
+// two braziers with living flames.
 
 const float PI = 3.14159265359;
 const float GAMMA_HZ = 40.0;
@@ -44,6 +46,61 @@ float cometTrail(vec2 p, vec2 a, vec2 b, float age, float cell) {
     float h = clamp(dot(p - a, ab) / max(dot(ab, ab), 1e-4), 0.0, 1.0);
     float d = length(p - a - ab * h);
     return smoothstep(cell * mix(0.25, 0.6, h), 0.0, d) * (1.0 - k) * mix(0.3, 1.0, h);
+}
+
+// ---------------------------------------------------------------------------
+// The temple. `q` is square-space (uv.x * aspect, uv.y), y down on Metal.
+// Open to the stars above; columns either side; a flagstone floor at
+// FLOOR_Y..NILE_Y with the Nile below, reflecting the columns.
+// ---------------------------------------------------------------------------
+
+const float FLOOR_Y = 0.74;
+const float NILE_Y  = 0.82;
+
+// One column: lotus capital up top, fluted shaft with a hieroglyph band, a
+// base at the floor. Returns (stone mask, fluting shade, glyph mask).
+vec3 column(vec2 q, float cx, float w, float torch) {
+    float capFlare = smoothstep(0.13, 0.06, q.y);                      // widens toward the top
+    float baseFlare = smoothstep(FLOOR_Y - 0.03, FLOOR_Y, q.y);
+    float halfW = w * (1.0 + 0.6 * capFlare + 0.3 * baseFlare);
+    float inX = step(abs(q.x - cx), halfW);
+    float inY = step(0.05, q.y) * step(q.y, FLOOR_Y);
+    float stone = inX * inY;
+    // fluting: vertical ridges, lit from the inner (torch) side
+    float ridge = 0.55 + 0.45 * abs(sin((q.x - cx) / w * 7.0));
+    float shade = ridge * (0.7 + 0.5 * torch);
+    // capital rings
+    shade *= 1.0 - 0.35 * step(abs(q.y - 0.135), 0.004) - 0.35 * step(abs(q.y - 0.10), 0.004);
+    // hieroglyph band down the middle of the shaft: 3x3 mini-glyphs per cell
+    float band = step(abs(q.x - cx), w * 0.45) * step(0.16, q.y) * step(q.y, FLOOR_Y - 0.05);
+    vec2 cellSz = vec2(w * 0.9, 0.036);
+    vec2 cid = floor((q - vec2(cx - w * 0.45, 0.0)) / cellSz);
+    vec2 cf = fract((q - vec2(cx - w * 0.45, 0.0)) / cellSz);
+    vec2 sub = floor(cf * 3.0);
+    float glyphOn = step(0.5, hash21(cid + sub * 7.0 + cx * 31.0)) * step(0.1, cf.y) * step(cf.y, 0.9);
+    glyphOn *= step(abs(cf.x - 0.5), 0.38);
+    return vec3(stone, shade, glyphOn * band);
+}
+
+// A brazier: stand, bowl, and a living flame above it. Returns (metal, flame, flame heat 0..1).
+vec3 brazier(vec2 q, vec2 bowl, float t, float flicker, float seed) {
+    float stand = step(abs(q.x - bowl.x), 0.003) * step(bowl.y, q.y) * step(q.y, FLOOR_Y);
+    float foot = step(abs(q.x - bowl.x), 0.014) * step(FLOOR_Y - 0.006, q.y) * step(q.y, FLOOR_Y);
+    vec2 bp = (q - bowl) / vec2(0.026, 0.014);
+    float bowlM = step(length(bp), 1.0) * step(0.0, bp.y);
+    float metal = max(max(stand, foot), bowlM);
+    // flame: a wobbling teardrop rising from the bowl
+    float h = 0.075 * (0.75 + 0.35 * flicker);
+    float fy = (bowl.y - q.y) / h;                                      // 0 at bowl, 1 at tip
+    float flame = 0.0, heat = 0.0;
+    if (fy > 0.0 && fy < 1.0) {
+        float wob = (noise(vec2(fy * 5.0 - t * 7.0, seed)) - 0.5) * 0.02 * fy;
+        float halfW = 0.016 * (1.0 - fy) * (1.0 - fy * 0.3) + 0.002;
+        float fx = abs(q.x - bowl.x - wob);
+        flame = smoothstep(halfW, halfW * 0.5, fx);
+        heat = 1.0 - fy;
+    }
+    return vec3(metal, flame, heat);
 }
 
 // ---------------------------------------------------------------------------
@@ -103,6 +160,31 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     vignette = mix(0.10, 1.0, vignette);
     color *= vignette;
     color *= mix(1.0, 0.65, low);   // unfocused: the stone recedes
+
+    // --- The temple (lite): columns, floor, braziers ---
+    float aspect = iResolution.x / iResolution.y;
+    vec2 q = vec2(uv.x * aspect, uv.y);
+    vec3 stoneCol = vec3(0.16, 0.12, 0.09);
+    float colW = 0.045;
+    float cxL = 0.085, cxR = aspect - 0.085;
+    vec3 cL = column(q, cxL, colW, leftFlicker);
+    vec3 cR = column(q, cxR, colW, rightFlicker);
+    float stone = max(cL.x, cR.x);
+    float shade = max(cL.x * cL.y, cR.x * cR.y);
+    color = mix(color, stoneCol * shade, stone * 0.95);
+    color += vec3(0.45, 0.70, 0.65) * max(cL.z, cR.z) * stone * 0.4 * mix(0.4, 1.0, focused);
+    if (uv.y >= FLOOR_Y && uv.y < NILE_Y) {
+        float row = floor((uv.y - FLOOR_Y) / 0.027);
+        float seam = max(step(fract((uv.y - FLOOR_Y) / 0.027), 0.10), step(fract(q.x / 0.09 + row * 0.5), 0.04));
+        vec3 floorCol = vec3(0.13, 0.10, 0.08) * (0.5 + 0.5 * mix(leftFlicker, rightFlicker, uv.x));
+        color = mix(color, mix(floorCol, floorCol * 0.4, seam), 0.9);
+    }
+    vec3 bL = brazier(q, vec2(cxL + 0.10, 0.50), time, leftFlicker, 1.0);
+    vec3 bR = brazier(q, vec2(cxR - 0.10, 0.50), time, rightFlicker, 2.0);
+    color = mix(color, vec3(0.07, 0.05, 0.03), max(bL.x, bR.x));
+    float heat = max(bL.z * bL.y, bR.z * bR.y);
+    color = mix(color, mix(vec3(1.0, 0.45, 0.05), vec3(1.0, 0.95, 0.6), heat * heat), max(bL.y, bR.y) * mix(0.35, 1.0, focused));
+
 
     // --- Layer 5: 40 Hz Gamma Entrainment ---
     float gamma = sin(2.0 * PI * GAMMA_HZ * time);

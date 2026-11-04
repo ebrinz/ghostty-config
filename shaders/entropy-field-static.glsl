@@ -46,7 +46,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float dot2 = smoothstep(0.42, 0.0, length(fract(cells) - 0.5));
     color += mix(ACCENT, GOLD, cellRand) * dot2 * lit * 0.35;
 
-    float band = smoothstep(0.02, 0.0, abs(uv.y - 0.06));
+    float band = smoothstep(0.02, 0.0, abs(uv.y - 0.94));
     color += GOLD * band * 0.05;
 
     vec2 vd = uv - 0.5;

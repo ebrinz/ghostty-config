@@ -165,7 +165,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     color += alienCyan * glowC * 0.07 * alienPulse;
 
     // traveling splice pulse — square by multiplication (GLSL pow(x,y) is undefined for x<0)
-    float pulseY = fract(time * 0.18);
+    float pulseY = 1.0 - fract(time * 0.18);   // runs up the helix (y down)
     float pd = (uv.y - pulseY) * 6.0;
     float pulse = exp(-pd * pd) * focused + focusPulse;
     vec3 spliceWhite = vec3(0.7, 0.9, 1.0);

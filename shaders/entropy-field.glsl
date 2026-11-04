@@ -128,7 +128,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float colId = floor(uv.x * 120.0);
     float colRand = hash21(vec2(colId, 7.0));
     float speed = 0.15 + colRand * 0.5;
-    float phase = fract(uv.y + time * speed + colRand);
+    float phase = fract(time * speed - uv.y + colRand);   // heads travel down the screen (y down)
     float streak = smoothstep(0.0, 0.02, phase) * smoothstep(0.35, 0.0, phase);
     float gate = step(0.6, colRand) * focused; // only some columns rain, and only when focused
     color += ACCENT * streak * gate * 0.10;
@@ -137,7 +137,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // Layer 4 — Baseline glow: a luminous turquoise band near the bottom,
     // echoing the 8.0 bits/byte ideal line in the entropy chart.
     // -----------------------------------------------------------------------
-    float baseY = 0.06;
+    float baseY = 0.94;   // near the bottom of the screen (y down)
     float band = smoothstep(0.02, 0.0, abs(uv.y - baseY));
     float shimmer = 0.7 + 0.3 * sin(uv.x * 40.0 - time * 2.0);
     color += GOLD * band * shimmer * 0.08;

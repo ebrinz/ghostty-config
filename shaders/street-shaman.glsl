@@ -278,12 +278,12 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // --- 4. Azure Smoke Wisps (rising from bottom) ---
     // Tall, thin wisps of blue smoke that drift upward and dissipate.
     // Vertically stretched UV gives them that elongated, wispy character.
-    float bottomFade = pow(1.0 - uv.y, 2.5);  // strong at bottom, gone by mid-screen
+    float bottomFade = pow(uv.y, 2.5);  // strong at the bottom of the screen (y down), gone by mid-screen
 
     // Three wisp columns at different speeds and offsets for organic layering
-    vec2 wispUV1 = vec2(uv.x * 2.0, uv.y * 0.8 - time * 0.07);
-    vec2 wispUV2 = vec2(uv.x * 2.5 + 1.7, uv.y * 0.6 - time * 0.05);
-    vec2 wispUV3 = vec2(uv.x * 1.8 + 3.3, uv.y * 1.0 - time * 0.09);
+    vec2 wispUV1 = vec2(uv.x * 2.0, uv.y * 0.8 + time * 0.07);        // + : the wisps rise
+    vec2 wispUV2 = vec2(uv.x * 2.5 + 1.7, uv.y * 0.6 + time * 0.05);
+    vec2 wispUV3 = vec2(uv.x * 1.8 + 3.3, uv.y * 1.0 + time * 0.09);
 
     float wisp1 = fbm(wispUV1);
     float wisp2 = fbm(wispUV2);
@@ -326,7 +326,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     color.rgb += emberColor * ember * climbFade * 0.55 * mix(0.5, 1.0, focused);
 
     // --- 5. Green ambient glow at bottom edge (fire below) ---
-    float bottomGlow = (1.0 - uv.y) * (1.0 - uv.y);
+    float bottomGlow = uv.y * uv.y;   // fire below: the bottom of the screen (y down)
     float glowPulse = 0.5 + 0.5 * sin(time * 1.2);
     vec3 fireGlow = vec3(0.0, 0.12, 0.03) * bottomGlow * mix(0.3, 0.6, glowPulse);
     fireGlow *= mix(1.0, 0.35, embers) + flare * 2.5;

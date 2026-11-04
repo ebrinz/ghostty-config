@@ -62,7 +62,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     color += mix(ACCENT, GOLD, cellRand) * dot2 * flick * 0.4;
 
     // Baseline glow.
-    float band = smoothstep(0.02, 0.0, abs(uv.y - 0.06));
+    float band = smoothstep(0.02, 0.0, abs(uv.y - 0.94));
     color += GOLD * band * 0.06;
 
     vec2 vd = uv - 0.5;

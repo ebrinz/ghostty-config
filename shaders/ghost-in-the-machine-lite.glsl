@@ -89,7 +89,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float colRand = hash21(vec2(colId, 3.7));
     float gate = step(0.72, colRand);
     float speed = 0.25 + colRand * 0.6;
-    float phase = fract(uv.y + time * speed + colRand);
+    float phase = fract(time * speed - uv.y + colRand);   // heads travel down the screen (y down)
     float streak = smoothstep(0.0, 0.05, phase) * smoothstep(0.45, 0.0, phase);
     float rowId = floor(uv.y * 45.0);
     float glyph = step(0.4, hash21(vec2(colId, rowId) + floor(time * 6.0)));
