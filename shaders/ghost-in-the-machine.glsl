@@ -8,6 +8,7 @@
 // the lattice — not drawn, but a soft Gaussian field where the ectoplasm
 // gathers into a churning mass, the lattice nodes brighten and tremble and
 // the rain flickers faster. It fades as the cursor approaches, shies while you type,
+// and breaks up into magenta motes that lift and scatter whenever it lets go,
 // glimpses its magenta eyes once per visit, and when the window loses focus
 // it comes out fully and watches until you return.
 //
@@ -273,9 +274,31 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
 
     // the eyes: two faint magenta embers, glimpsed
     color += MAGENTA * eyesOn * 0.55;
-    // dissipation: a faint magenta static shimmer as it lets go
-    float shimmer = hash21(floor(fragCoord / 2.0) + floor(time * 40.0));
-    color += MAGENTA * gf.x * gc.y * presence * focused * step(0.85, shimmer) * 0.25;
+
+    // departiculization: as it lets go — at the end of a visit, or when you
+    // return focus — the mass breaks into magenta motes that lift, scatter
+    // and wink out. Each cell/3 block is one mote; its brightness comes from
+    // sampling the body where the mote started, so only the mass breaks up.
+    float cycPh  = fract(time / GHOST_CYCLE);
+    float cycT   = clamp((cycPh - 0.80) / 0.12, 0.0, 1.0);
+    float cycOn  = step(0.001, gc.y) * focused;
+    float focT   = clamp(focusAge / 1.5, 0.0, 1.0);
+    float focOn  = step(focusAge, 1.5) * focused;
+    float fadeT  = (cycOn > 0.5) ? cycT : focT;
+    float fadeOn = max(cycOn, focOn) * presence;
+    if (fadeOn > 0.001 && fadeT < 1.0) {
+        float blk = max(cell / 3.0, 3.0);
+        vec2 pb = floor(fragCoord / blk);
+        float h1 = hash21(pb + 11.0), h2 = hash21(pb + 23.0);
+        float flight = fadeT * (0.6 + 0.8 * h1);                                // staggered take-off
+        vec2 lift = vec2((h2 - 0.5) * 0.10, 0.14) * flight;                      // up and outward (y down)
+        vec2 qb = ((pb + 0.5) * blk) / iResolution.y;                            // block centre, square-space
+        float born = ghostField(qb + lift, gC, gS, time).x;                      // was this mote part of the mass?
+        float dot2 = smoothstep(0.5, 0.15, length(fract(fragCoord / blk) - 0.5));
+        float wink = step(0.55, h1) * step(0.5, hash21(pb + floor(time * 18.0)));  // sparse, twinkling
+        float mote = born * dot2 * wink * (1.0 - flight) * fadeOn;
+        color += mix(MAGENTA, vec3(1.0, 0.8, 0.95), 0.3) * mote * 0.85;
+    }
     // bright head at the leading edge of each trail
     float head = smoothstep(0.05, 0.0, phase) * gate * glyph * focused;
     color += vec3(0.85, 1.0, 0.92) * head * 0.22;

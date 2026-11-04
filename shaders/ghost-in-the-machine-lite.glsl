@@ -133,7 +133,9 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // --- The trickster's presence ---
     vec4 gc = ghostCycle(time);
     vec2 gCenterUV = ghostCenter(gc.w, time);
-    vec3 gf = ghostField(vec2(uv.x * aspect, uv.y), vec2(gCenterUV.x * aspect, gCenterUV.y), 0.22, time);
+    vec2 gC = vec2(gCenterUV.x * aspect, gCenterUV.y);
+    float gS = 0.22;
+    vec3 gf = ghostField(vec2(uv.x * aspect, uv.y), gC, gS, time);
     float approach = 1.0 - smoothstep(cell * 6.0, cell * 16.0, length(curC - gCenterUV * iResolution.xy));
     float presence = (1.0 - approach) * (1.0 - 0.6 * smoothstep(1.2, 0.0, moveAge));
     float amp = max(max(gc.x * presence * focused, 1.0 - focused), (1.0 - smoothstep(0.0, 1.5, focusAge)) * focused);
@@ -151,6 +153,31 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float mass = ghostBody * mix(0.45, 1.0, churn);
     color += mix(ECTO * 0.35, ECTO, churn) * mass * (0.10 + 0.22 * churn);
     color += vec3(1.000, 0.373, 0.824) * eyesOn * 0.55;
+    const vec3 MAGENTA = vec3(1.000, 0.373, 0.824);
+    // departiculization: as it lets go — at the end of a visit, or when you
+    // return focus — the mass breaks into magenta motes that lift, scatter
+    // and wink out. Each cell/3 block is one mote; its brightness comes from
+    // sampling the body where the mote started, so only the mass breaks up.
+    float cycPh  = fract(time / GHOST_CYCLE);
+    float cycT   = clamp((cycPh - 0.80) / 0.12, 0.0, 1.0);
+    float cycOn  = step(0.001, gc.y) * focused;
+    float focT   = clamp(focusAge / 1.5, 0.0, 1.0);
+    float focOn  = step(focusAge, 1.5) * focused;
+    float fadeT  = (cycOn > 0.5) ? cycT : focT;
+    float fadeOn = max(cycOn, focOn) * presence;
+    if (fadeOn > 0.001 && fadeT < 1.0) {
+        float blk = max(cell / 3.0, 3.0);
+        vec2 pb = floor(fragCoord / blk);
+        float h1 = hash21(pb + 11.0), h2 = hash21(pb + 23.0);
+        float flight = fadeT * (0.6 + 0.8 * h1);                                // staggered take-off
+        vec2 lift = vec2((h2 - 0.5) * 0.10, 0.14) * flight;                      // up and outward (y down)
+        vec2 qb = ((pb + 0.5) * blk) / iResolution.y;                            // block centre, square-space
+        float born = ghostField(qb + lift, gC, gS, time).x;                      // was this mote part of the mass?
+        float dot2 = smoothstep(0.5, 0.15, length(fract(fragCoord / blk) - 0.5));
+        float wink = step(0.55, h1) * step(0.5, hash21(pb + floor(time * 18.0)));  // sparse, twinkling
+        float mote = born * dot2 * wink * (1.0 - flight) * fadeOn;
+        color += mix(MAGENTA, vec3(1.0, 0.8, 0.95), 0.3) * mote * 0.85;
+    }
 
     // --- Matrix code-rain: sparse glyph-blocky streaks ---
     float colId = floor(uv.x * 80.0);
