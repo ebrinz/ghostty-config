@@ -15,7 +15,7 @@ Each theme is a color palette + GLSL shader pair. Drop matching files in `themes
 | **night-temple** | Egyptian night ritual. Torchlit temple, starfield, Nile reflections, hieroglyphic prompt. |
 | **amber-splice** | Jurassic DNA-expansion aliens. Gold double helix in amber, cyan alien splice strand, traveling splice pulse. |
 | **dip-shit** | Trashed VHS tape in a dying CRT. Tracking errors, color bleed, static bursts, tape dropouts, barrel distortion. |
-| **grog-harbor** | Melee Island dock at midnight, LucasArts SCUMM era. VGA Bayer dither, moonlit water, torch flicker, scanlines. |
+| **grog-harbor** | Melee Island dock at midnight, LucasArts SCUMM era. Pixel-art waves rolling along the bottom, palm fronds swaying at the top corners, VGA Bayer dither, moonlit water, torch flicker, scanlines. |
 | **entropy-field** | Realtime RNG observatory. Quantum foam, falling bit-rain, turquoise/gold sampling lattice. Backdrop for the **ghostty-rng** app. |
 | **ghost-in-the-machine** | Spectral cyberpunk séance. Ectoplasmic vapor, jittering Fuller geodesic lattice, matrix code-rain, rare magenta Snow Crash glitch bursts. |
 

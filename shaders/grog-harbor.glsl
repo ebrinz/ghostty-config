@@ -4,6 +4,9 @@
 // VGA 256-color Bayer ordered dither on a 1992 CRT phosphor display.
 // Foundation layers: Bayer 4x4 dither, scanlines, vignette, 40Hz gamma
 // entrainment, and text protection. Extended layers added in later tasks.
+// Scene: pixel-art waves roll along the bottom of the screen, palm fronds
+// sway in from the top corners. Oriented to the screen (y down on Metal):
+// water low, torch glow and fronds high.
 //
 // Interaction (Ghostty 1.4 uniforms):
 //   cursor — Guybrush's lantern. A warm dithered glow on the cursor; on jumps
@@ -91,7 +94,7 @@ float lanternWalk(vec2 p, vec2 a, vec2 b, float age, float cell) {
 // ---------------------------------------------------------------------------
 
 vec2 moonRipple(vec2 uv, float t) {
-    float zone = smoothstep(0.0, 0.10, 0.35 - uv.y); // 0 above 0.35, 1 well below
+    float zone = smoothstep(0.0, 0.10, uv.y - 0.65); // 0 above 0.65, 1 toward the bottom (y down)
     if (zone <= 0.0) return vec2(0.0);
 
     // Slow horizontal sine bands, phase drifts with time
@@ -105,6 +108,70 @@ vec2 moonRipple(vec2 uv, float t) {
     float highlight = streak * zone * 0.25;
 
     return vec2(disp, highlight);
+}
+
+// ---------------------------------------------------------------------------
+// Pixel-art sea: three stepped wave bands drawn in 4-px blocks along the
+// bottom of the screen (y is down on Metal, so bottom = large y). Returns
+// (water body, crest) for the block this pixel falls in.
+// ---------------------------------------------------------------------------
+
+const float PX = 4.0; // block size in pixels
+
+vec2 pixelWaves(vec2 fragCoord, vec2 res, float t) {
+    vec2 b = floor(fragCoord / PX);
+    vec2 nb = res / PX;
+    float body = 0.0, crest = 0.0;
+    for (int i = 0; i < 3; i++) {
+        float fi = float(i);
+        float base  = nb.y * (0.80 + 0.07 * fi);           // wave midline (block row)
+        float amp   = 1.5 + fi;                            // blocks
+        float freq  = (0.045 - 0.008 * fi) * 6.2832;
+        float speed = (0.9 - 0.2 * fi) * ((i == 1) ? -1.0 : 1.0);
+        float y = base + floor(amp * sin(b.x * freq + t * speed)
+                             + amp * 0.5 * sin(b.x * freq * 2.3 - t * speed * 0.7));
+        body  = max(body, step(y, b.y) * (0.5 + 0.25 * fi));
+        crest = max(crest, step(abs(b.y - y), 0.5));
+        // foam dashes one block below the crest
+        crest += step(abs(b.y - (y + 1.0)), 0.5) * 0.4 * step(0.5, fract(b.x * 0.5 + fi * 0.33));
+    }
+    return vec2(body, min(crest, 1.0));
+}
+
+// ---------------------------------------------------------------------------
+// Palm fronds: tapered, serrated leaf silhouettes fanning in from the top
+// corners and swaying slowly. Block-space math so they stay pixel-art.
+// ---------------------------------------------------------------------------
+
+float frond(vec2 b, vec2 anchor, float ang, float len, float droop) {
+    vec2 d = vec2(cos(ang), sin(ang));
+    vec2 n = vec2(-d.y, d.x);
+    vec2 r = b - anchor;
+    float s = dot(r, d);
+    float off = dot(r, n) - droop * s * s / len;         // curved centreline
+    float inside = step(0.0, s) * step(s, len);
+    float w = (1.0 - s / len) * 4.0 + 0.5;               // tapering half-width
+    float leaflets = 0.55 + 0.45 * step(0.45, fract(s * 0.35));
+    return inside * step(abs(off), w * leaflets);
+}
+
+float palmTops(vec2 fragCoord, vec2 res, float t) {
+    vec2 b = floor(fragCoord / PX);
+    vec2 nb = res / PX;
+    float m = 0.0;
+    vec2 aL = vec2(-6.0, -4.0);                          // just off the top-left
+    for (int i = 0; i < 5; i++) {
+        float fi = float(i);
+        float sway = sin(t * 0.5 + fi * 1.3) * 0.04;
+        m = max(m, frond(b, aL, 0.15 + fi * 0.22 + sway, nb.x * 0.28 - fi * 4.0, 0.9 + fi * 0.2));
+    }
+    vec2 aR = vec2(nb.x + 6.0, -2.0);                    // just off the top-right
+    for (int i = 0; i < 4; i++) {
+        float fi = float(i);
+        float sway = sin(t * 0.45 + fi * 1.7 + 2.0) * 0.04;
+        m = max(m, frond(b, aR, 3.14159 - (0.2 + fi * 0.25 + sway), nb.x * 0.24 - fi * 4.0, -(0.9 + fi * 0.2)));
+    }
+    return m;
 }
 
 // ---------------------------------------------------------------------------
@@ -164,6 +231,18 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         color += vec3(0.15, 0.35, 0.55) * ripple.y;
     }
 
+    // --- Layer 1b: Pixel-art sea along the bottom ---
+    vec2 sea = pixelWaves(fragCoord, iResolution.xy, iTime);
+    vec3 seaDeep  = vec3(0.06, 0.14, 0.32);
+    vec3 seaCrest = vec3(0.35, 0.75, 0.80);
+    color += seaDeep * sea.x * 0.18;
+    color += seaCrest * sea.y * 0.35;
+
+    // --- Layer 1c: Palm tops swaying in from the top corners ---
+    float palms = palmTops(fragCoord, iResolution.xy, iTime);
+    vec3 frondColor = vec3(0.02, 0.06, 0.04);
+    color = mix(color, frondColor, palms * 0.8);
+
     // --- Layer 4b: Phosphor bloom — soft warm glow around bright pixels ---
     vec3 bloom = vec3(0.0);
     float bloomRadius = 0.003;
@@ -184,7 +263,11 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     color += lanternColor * walk * 0.3;
 
     // --- Bayer Dither: VGA 256-color ordered quantization (coarser asleep) ---
-    color = ditherQuantize(color, fragCoord, mix(5.0, 3.0, asleep));
+    // Gated off the plain background: dithering the near-black navy turned it
+    // into a gray speckle that washed the whole screen out.
+    vec3 dithered = ditherQuantize(color, fragCoord, mix(5.0, 3.0, asleep));
+    float tone = smoothstep(0.08, 0.16, dot(color, vec3(0.2126, 0.7152, 0.0722)));
+    color = mix(color, dithered, tone);
 
     // --- Scanlines: 12% darkening on alternating rows ---
     color *= 1.0 - 0.12 * mod(floor(fragCoord.y), 2.0);
@@ -194,7 +277,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float torchNoise2 = noise(vec2(iTime * 1.3, 17.0));
     float torch = (torchNoise1 * 0.7 + torchNoise2 * 0.3);
     torch = mix(torch, 0.35, asleep) + flare * 0.6;  // steady and low asleep, flares on focus
-    float topWeight = smoothstep(0.6, 1.0, uv.y); // strongest near top
+    float topWeight = smoothstep(0.4, 0.0, uv.y); // strongest near the top (y down)
     float flickerAmp = 0.035 * topWeight;
     vec3 torchTint = vec3(1.08, 1.02, 0.92); // warm orange tint
     color *= mix(vec3(1.0), torchTint, torch * topWeight);
@@ -217,7 +300,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
 
     // --- Text Protection: restore clean text after CRT effects ---
     color = clamp(color, 0.0, 1.0);
-    color = mix(color, cleanText, textMask);
+    color = mix(color, min(cleanText * 1.10, 1.0), textMask);   // glyphs lifted 10%
 
     fragColor = vec4(color, clean.a);
 }

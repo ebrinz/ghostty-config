@@ -1,6 +1,7 @@
 // grog-harbor-lite.glsl
 // Lite variant: Bayer dither + scanlines + vignette + 40Hz gamma + text protection.
 // Drops: moonlit water ripples, phosphor glow, chromatic aberration, torch flicker.
+// Keeps the scene: pixel-art waves along the bottom, palm fronds at the top corners.
 // Interaction: dithered lantern glow on the cursor that walks to new spots in
 // SCUMM 12 fps steps; unfocused, the palette drops to 4 levels and dims.
 // Target: integrated GPU, 60fps with headroom.
@@ -49,6 +50,70 @@ vec3 ditherQuantize(vec3 color, vec2 fragCoord, float divisor) {
     float threshold = bayer4x4[bc.y * 4 + bc.x];
     vec3 biased = color + (threshold - 0.5) / divisor;
     return floor(biased * divisor + 0.5) / divisor;
+}
+
+// ---------------------------------------------------------------------------
+// Pixel-art sea: three stepped wave bands drawn in 4-px blocks along the
+// bottom of the screen (y is down on Metal, so bottom = large y). Returns
+// (water body, crest) for the block this pixel falls in.
+// ---------------------------------------------------------------------------
+
+const float PX = 4.0; // block size in pixels
+
+vec2 pixelWaves(vec2 fragCoord, vec2 res, float t) {
+    vec2 b = floor(fragCoord / PX);
+    vec2 nb = res / PX;
+    float body = 0.0, crest = 0.0;
+    for (int i = 0; i < 3; i++) {
+        float fi = float(i);
+        float base  = nb.y * (0.80 + 0.07 * fi);           // wave midline (block row)
+        float amp   = 1.5 + fi;                            // blocks
+        float freq  = (0.045 - 0.008 * fi) * 6.2832;
+        float speed = (0.9 - 0.2 * fi) * ((i == 1) ? -1.0 : 1.0);
+        float y = base + floor(amp * sin(b.x * freq + t * speed)
+                             + amp * 0.5 * sin(b.x * freq * 2.3 - t * speed * 0.7));
+        body  = max(body, step(y, b.y) * (0.5 + 0.25 * fi));
+        crest = max(crest, step(abs(b.y - y), 0.5));
+        // foam dashes one block below the crest
+        crest += step(abs(b.y - (y + 1.0)), 0.5) * 0.4 * step(0.5, fract(b.x * 0.5 + fi * 0.33));
+    }
+    return vec2(body, min(crest, 1.0));
+}
+
+// ---------------------------------------------------------------------------
+// Palm fronds: tapered, serrated leaf silhouettes fanning in from the top
+// corners and swaying slowly. Block-space math so they stay pixel-art.
+// ---------------------------------------------------------------------------
+
+float frond(vec2 b, vec2 anchor, float ang, float len, float droop) {
+    vec2 d = vec2(cos(ang), sin(ang));
+    vec2 n = vec2(-d.y, d.x);
+    vec2 r = b - anchor;
+    float s = dot(r, d);
+    float off = dot(r, n) - droop * s * s / len;         // curved centreline
+    float inside = step(0.0, s) * step(s, len);
+    float w = (1.0 - s / len) * 4.0 + 0.5;               // tapering half-width
+    float leaflets = 0.55 + 0.45 * step(0.45, fract(s * 0.35));
+    return inside * step(abs(off), w * leaflets);
+}
+
+float palmTops(vec2 fragCoord, vec2 res, float t) {
+    vec2 b = floor(fragCoord / PX);
+    vec2 nb = res / PX;
+    float m = 0.0;
+    vec2 aL = vec2(-6.0, -4.0);                          // just off the top-left
+    for (int i = 0; i < 5; i++) {
+        float fi = float(i);
+        float sway = sin(t * 0.5 + fi * 1.3) * 0.04;
+        m = max(m, frond(b, aL, 0.15 + fi * 0.22 + sway, nb.x * 0.28 - fi * 4.0, 0.9 + fi * 0.2));
+    }
+    vec2 aR = vec2(nb.x + 6.0, -2.0);                    // just off the top-right
+    for (int i = 0; i < 4; i++) {
+        float fi = float(i);
+        float sway = sin(t * 0.45 + fi * 1.7 + 2.0) * 0.04;
+        m = max(m, frond(b, aR, 3.14159 - (0.2 + fi * 0.25 + sway), nb.x * 0.24 - fi * 4.0, -(0.9 + fi * 0.2)));
+    }
+    return m;
 }
 
 // iCurrentCursor / iPreviousCursor: xy = left edge and +Y edge in fragCoord
@@ -104,13 +169,29 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float asleep    = 1.0 - focused;
     float flare     = smoothstep(0.8, 0.05, focusAge) * focused;
 
+    // --- Layer 1b: Pixel-art sea along the bottom ---
+    vec2 sea = pixelWaves(fragCoord, iResolution.xy, iTime);
+    vec3 seaDeep  = vec3(0.06, 0.14, 0.32);
+    vec3 seaCrest = vec3(0.35, 0.75, 0.80);
+    color += seaDeep * sea.x * 0.18;
+    color += seaCrest * sea.y * 0.35;
+
+    // --- Layer 1c: Palm tops swaying in from the top corners ---
+    float palms = palmTops(fragCoord, iResolution.xy, iTime);
+    vec3 frondColor = vec3(0.02, 0.06, 0.04);
+    color = mix(color, frondColor, palms * 0.8);
+
     // --- The lantern: warm glow on the cursor, SCUMM walk on jumps ---
     vec3 lanternColor = vec3(0.91, 0.60, 0.22);
     color += lanternColor * exp(-cursorD * 1.6) * (1.0 + flare * 1.5) * 0.22 * mix(0.4, 1.0, focused);
     color += lanternColor * lanternWalk(fragCoord, prevC, curC, moveAge, cell) * jumpGate * 0.3;
 
     // --- Bayer Dither: VGA 256-color ordered quantization (coarser asleep) ---
-    color = ditherQuantize(color, fragCoord, mix(5.0, 3.0, asleep));
+    // Gated off the plain background: dithering the near-black navy turned it
+    // into a gray speckle that washed the whole screen out.
+    vec3 dithered = ditherQuantize(color, fragCoord, mix(5.0, 3.0, asleep));
+    float tone = smoothstep(0.08, 0.16, dot(color, vec3(0.2126, 0.7152, 0.0722)));
+    color = mix(color, dithered, tone);
 
     // --- Scanlines: 12% darkening on alternating rows ---
     color *= 1.0 - 0.12 * mod(floor(fragCoord.y), 2.0);
@@ -130,7 +211,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
 
     // --- Text Protection: restore clean text after CRT effects ---
     color = clamp(color, 0.0, 1.0);
-    color = mix(color, cleanText, textMask);
+    color = mix(color, min(cleanText * 1.10, 1.0), textMask);   // glyphs lifted 10%
 
     fragColor = vec4(color, clean.a);
 }
