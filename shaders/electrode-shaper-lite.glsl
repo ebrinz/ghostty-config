@@ -5,6 +5,7 @@
 //          40Hz gamma entrainment, text protection.
 // Interaction: violet corona on the cursor, straight discharge line on jumps
 // of 2+ cells; unfocused, the chamber powers down; focus gain surges.
+// Scene (lite): the Jacob's ladder as soft light — two conductors and the climbing arc.
 
 const float PI = 3.14159265359;
 const float GAMMA_HZ = 40.0;
@@ -18,6 +19,61 @@ vec2 barrelDistort(vec2 uv, float strength) {
     vec2 center = uv - 0.5;
     float dist2 = dot(center, center);
     return uv + center * dist2 * strength;
+}
+
+// --- Noise (for the arc jag) ---
+float hash21(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
+float noise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    float a = hash21(i), b = hash21(i + vec2(1.0, 0.0)), c = hash21(i + vec2(0.0, 1.0)), d = hash21(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+// --- Jacob's ladder helpers (see electrode-shaper.glsl) ---
+float segDistQ(vec2 p, vec2 a, vec2 b) {
+    vec2 pa = p - a, ba = b - a;
+    float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0);
+    return length(pa - ba * h);
+}
+
+// Rail point for side (-1 left, +1 right) at height h (0 bottom .. 1 top).
+vec2 railPoint(float side, float h, float aspect) {
+    return vec2(aspect * 0.5 + side * mix(0.035, 0.22, h), mix(0.95, 0.12, h));
+}
+
+// Where the ladder arc is in its cycle. Returns (height 0..1, on 0/1, snap flash 0..1).
+const float LADDER_T = 3.6;
+vec3 ladderPhase(float t) {
+    float ph = fract(t / LADDER_T);
+    float climbing = step(ph, 0.78);
+    float h = pow(ph / 0.78, 1.6);
+    float snap = smoothstep(0.78, 0.785, ph) * smoothstep(0.86, 0.80, ph);
+    return vec3(min(h, 1.0), climbing, snap);
+}
+
+// A jagged arc between a and b, seeded per frame-step so it crackles.
+// Returns (core, glow) at p. `amp` is the sideways jag in q units.
+vec2 jagArc(vec2 p, vec2 a, vec2 b, float seed, float amp, float pxl) {
+    vec2 ab = b - a;
+    float len = max(length(ab), 1e-4);
+    vec2 dir = ab / len;
+    vec2 nrm = vec2(-dir.y, dir.x);
+    float along = clamp(dot(p - a, dir), 0.0, len);
+    float side = dot(p - a, nrm);
+    float u = along / len;
+    float jag = (noise(vec2(along * 60.0, seed)) - 0.5) * 2.0
+              + (noise(vec2(along * 180.0, seed + 7.0)) - 0.5) * 0.6;
+    jag *= amp * sin(u * 3.14159);
+    float d = abs(side - jag);
+    float core = smoothstep(pxl * 1.8, 0.0, d);
+    float glow = smoothstep(amp * 0.9 + 0.01, 0.0, d) * 0.45;
+    return vec2(core, glow);
 }
 
 // --- Interaction helpers (Ghostty 1.4 uniforms) ---
@@ -96,6 +152,25 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     color += violet * corona * 0.25 * mix(0.3, 1.0, focused);
     float bolt = cometTrail(fragCoord, prevC, curC, moveAge, cell) * jumpGate;
     color += mix(violet, hotWhite, bolt) * bolt * 0.7;
+
+    // --- The apparatus (lite): soft conductors and the climbing arc ---
+    float aspect = iResolution.x / iResolution.y;
+    vec2 q = vec2(uv.x * aspect, uv.y);
+    float pxl = 1.0 / iResolution.y;
+    vec3 plasmaColor = mix(violet, vec3(0.13, 0.72, 0.78), 0.5);
+    vec3 conductor = vec3(0.45, 0.76, 0.86);
+    vec3 lp = ladderPhase(time);
+    for (int sdx = 0; sdx < 2; sdx++) {
+        float side = (sdx == 0) ? -1.0 : 1.0;
+        float d = segDistQ(q, railPoint(side, 0.0, aspect), railPoint(side, 1.0, aspect));
+        color += conductor * exp(-d * 110.0) * 0.25 * mix(0.35, 1.0, focused);
+    }
+    if (lp.y * focused > 0.5) {
+        vec2 a = railPoint(-1.0, lp.x, aspect), b = railPoint(1.0, lp.x, aspect);
+        vec2 arcv = jagArc(q, a, b, floor(time * 45.0), mix(0.004, 0.03, lp.x), pxl);
+        float energy = mix(0.7, 1.3, lp.x);
+        color += mix(hotWhite, plasmaColor, 0.35) * arcv.x * energy * 0.8 + plasmaColor * arcv.y * energy * 1.3;
+    }
 
     // --- Layer 5: Vignette ---
     float vignetteDist = length(rawUV - 0.5);

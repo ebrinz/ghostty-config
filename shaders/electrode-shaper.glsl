@@ -2,8 +2,14 @@
 // Theme: Cyberpunk CRT Electrode Shaper
 // A Curious Experiment in EMF Effects on Plasma and Psionic Attenuation
 // Single-pass fragment shader for Ghostty with 7 composited layers.
-// CRT artifacts, plasma field, electrode arcs, EMF interference,
+// CRT artifacts, plasma field, Jacob's ladder, EMF interference,
 // vignette, 40 Hz gamma entrainment, and luminance-based text protection.
+//
+// Scene (y down on Metal): a Jacob's ladder centered on screen, drawn as
+// light rather than line art — two diverging conductors glowing softly in a
+// region of violet haze. An arc ignites at the bottom gap, climbs faster as
+// it stretches, flashes out at the tips, pauses, and restarts every 3.6 s.
+// A cursor resting between the rails draws a tendril from the nearest rail.
 //
 // Interaction (Ghostty 1.4 uniforms):
 //   cursor — the electrode. A violet plasma corona pulses on the cursor;
@@ -50,36 +56,48 @@ vec2 barrelDistort(vec2 uv, float strength) {
 }
 
 // ---------------------------------------------------------------------------
-// Electrode arc — hash-based time-cell discharge
+// The apparatus: a Jacob's ladder drawn as light. `q` is square-space
+// (uv.x * aspect, uv.y) of the barrel-distorted uv, y down on Metal.
 // ---------------------------------------------------------------------------
 
-float electrodeArc(vec2 uv, float time) {
-    float cellSize = 4.0;
-    float cell = floor(time / cellSize);
-    float localTime = fract(time / cellSize);
+float segDistQ(vec2 p, vec2 a, vec2 b) {
+    vec2 pa = p - a, ba = b - a;
+    float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0);
+    return length(pa - ba * h);
+}
 
-    float fires = step(0.6, hash21(vec2(cell, 0.0)));
-    if (fires < 0.5) return 0.0;
+// Rail point for side (-1 left, +1 right) at height h (0 bottom .. 1 top).
+vec2 railPoint(float side, float h, float aspect) {
+    return vec2(aspect * 0.5 + side * mix(0.035, 0.22, h), mix(0.95, 0.12, h));
+}
 
-    float envelope = smoothstep(0.0, 0.05, localTime)
-                   * smoothstep(0.2, 0.12, localTime);
+// Where the ladder arc is in its cycle. Returns (height 0..1, on 0/1, snap flash 0..1).
+const float LADDER_T = 3.6;
+vec3 ladderPhase(float t) {
+    float ph = fract(t / LADDER_T);
+    float climbing = step(ph, 0.78);
+    float h = pow(ph / 0.78, 1.6);
+    float snap = smoothstep(0.78, 0.785, ph) * smoothstep(0.86, 0.80, ph);
+    return vec3(min(h, 1.0), climbing, snap);
+}
 
-    float orientation = hash21(vec2(cell, 10.0));
-    float pathPos = hash21(vec2(cell, 20.0)) * 0.6 + 0.2;
-
-    float arcLine;
-    if (orientation > 0.5) {
-        float wobble = sin(uv.x * 15.0 + hash21(vec2(cell, 30.0)) * 6.28) * 0.03;
-        arcLine = abs(uv.y - pathPos + wobble);
-    } else {
-        float wobble = sin(uv.y * 15.0 + hash21(vec2(cell, 40.0)) * 6.28) * 0.03;
-        arcLine = abs(uv.x - pathPos + wobble);
-    }
-
-    float core = smoothstep(0.008, 0.0, arcLine);
-    float glow = smoothstep(0.06, 0.0, arcLine) * 0.3;
-
-    return (core + glow) * envelope;
+// A jagged arc between a and b, seeded per frame-step so it crackles.
+// Returns (core, glow) at p. `amp` is the sideways jag in q units.
+vec2 jagArc(vec2 p, vec2 a, vec2 b, float seed, float amp, float pxl) {
+    vec2 ab = b - a;
+    float len = max(length(ab), 1e-4);
+    vec2 dir = ab / len;
+    vec2 nrm = vec2(-dir.y, dir.x);
+    float along = clamp(dot(p - a, dir), 0.0, len);
+    float side = dot(p - a, nrm);
+    float u = along / len;
+    float jag = (noise(vec2(along * 60.0, seed)) - 0.5) * 2.0
+              + (noise(vec2(along * 180.0, seed + 7.0)) - 0.5) * 0.6;
+    jag *= amp * sin(u * 3.14159);
+    float d = abs(side - jag);
+    float core = smoothstep(pxl * 1.8, 0.0, d);
+    float glow = smoothstep(amp * 0.9 + 0.01, 0.0, d) * 0.45;
+    return vec2(core, glow);
 }
 
 // ---------------------------------------------------------------------------
@@ -184,11 +202,6 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
 
     color += plasmaColor * plasmaMask * plasmaFlicker * 0.08 * mix(1.0, 0.25, down);
 
-    // --- Layer 3: Electrode Arcs (ambient arcs only while powered) ---
-    float arc = electrodeArc(uv, time) * focused;
-    vec3 arcColor = mix(plasmaColor, hotWhite, 0.6);
-    color += arcColor * arc * 0.35;
-
     // --- Layer 3b: The electrode — corona on the cursor, discharge on jumps ---
     float coronaPulse = 0.7 + 0.3 * sin(time * 9.0) * noise(vec2(time * 7.0, 1.0));
     float corona = exp(-cursorD * 1.8) * coronaPulse;
@@ -210,6 +223,61 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     if (powerArc > 0.001) {
         vec2 bolt2 = lightningArc(fragCoord, vec2(0.0, curC.y), vec2(iResolution.x, curC.y), focusAge, cell);
         color += (hotWhite * bolt2.x + plasmaColor * bolt2.y) * powerArc * 0.8;
+    }
+
+    // --- Layer 3c: The apparatus — a Jacob's ladder, drawn as light, not line art ---
+    float aspect = iResolution.x / iResolution.y;
+    vec2 q = vec2(uv.x * aspect, uv.y);
+    float pxl = 1.0 / iResolution.y;
+    // the chamber: a soft region of violet haze, no outline
+    vec2 jp = q - vec2(aspect * 0.5, 0.0);
+    vec2 jbd = abs(jp - vec2(0.0, 0.66)) - vec2(0.30, 0.30);
+    float jarSd = min(length(max(jbd, 0.0)) + min(max(jbd.x, jbd.y), 0.0), length(jp - vec2(0.0, 0.36)) - 0.30);
+    float haze = smoothstep(0.06, -0.12, jarSd);
+    color += violet * haze * 0.05 * plasmaFlicker * mix(0.3, 1.0, focused);
+    // rails: soft glowing conductors, brighter near the live arc
+    vec3 lp = ladderPhase(time);
+    float arcOn = lp.y * focused;
+    vec3 conductor = mix(cyan, vec3(0.75, 0.80, 0.95), 0.5);
+    for (int sdx = 0; sdx < 2; sdx++) {
+        float side = (sdx == 0) ? -1.0 : 1.0;
+        vec2 rb = railPoint(side, 0.0, aspect), rt = railPoint(side, 1.0, aspect);
+        float d = segDistQ(q, rb, rt);
+        float h = clamp(dot(q - rb, rt - rb) / dot(rt - rb, rt - rb), 0.0, 1.0);
+        float near = exp(-abs(h - lp.x) * 6.0) * arcOn;                 // charge gathers near the arc
+        color += conductor * exp(-d * 110.0) * (0.22 + 0.35 * near) * mix(0.35, 1.0, focused);
+        color += violet * exp(-d * 30.0) * 0.06 * mix(0.3, 1.0, focused);
+        color += violet * exp(-length(q - rb) * 45.0) * 0.25 * mix(0.3, 1.0, focused);   // charge pool at the foot
+    }
+    // the climbing arc: bloom-heavy, soft core
+    if (arcOn > 0.5) {
+        vec2 a = railPoint(-1.0, lp.x, aspect), b = railPoint(1.0, lp.x, aspect);
+        float seed = floor(time * 45.0);
+        float amp = mix(0.004, 0.03, lp.x);
+        vec2 main = jagArc(q, a, b, seed, amp, pxl);
+        vec2 second = jagArc(q, a, b, seed + 31.0, amp * 1.4, pxl) * 0.45;
+        float energy = mix(0.7, 1.3, lp.x) * (0.85 + 0.15 * noise(vec2(time * 30.0, 3.0)));
+        color += mix(hotWhite, plasmaColor, 0.35) * (main.x + second.x) * energy * 0.8;
+        color += plasmaColor * (main.y + second.y) * energy * 1.3;
+        color += mix(cyan, hotWhite, 0.5) * (exp(-length(q - a) * 60.0) + exp(-length(q - b) * 60.0)) * 0.5 * energy;
+    }
+    // snap flash at the rail tips when the arc lets go
+    if (lp.z > 0.001 && focused > 0.5) {
+        vec2 ta = railPoint(-1.0, 1.0, aspect), tb = railPoint(1.0, 1.0, aspect);
+        color += mix(hotWhite, plasmaColor, 0.3) * (exp(-length(q - ta) * 30.0) + exp(-length(q - tb) * 30.0)) * lp.z * 0.7;
+    }
+    // the probe: a cursor between the rails draws a tendril from the nearest rail
+    vec2 curUV = barrelDistort(curC / iResolution.xy, barrelStrength);
+    vec2 curQ = vec2(curUV.x * aspect, curUV.y);
+    float ch = clamp((0.95 - curQ.y) / (0.95 - 0.12), 0.0, 1.0);
+    vec2 rl = railPoint(-1.0, ch, aspect), rr = railPoint(1.0, ch, aspect);
+    float between = step(rl.x - 0.03, curQ.x) * step(curQ.x, rr.x + 0.03) * step(0.10, curQ.y) * step(curQ.y, 0.95);
+    if (between * focused > 0.5) {
+        vec2 from = (abs(curQ.x - rl.x) < abs(curQ.x - rr.x)) ? rl : rr;
+        float gate = step(0.35, hash21(vec2(floor(time * 12.0), 5.0)));
+        vec2 tend = jagArc(q, from, curQ, floor(time * 50.0) + 3.0, 0.012, pxl);
+        color += (mix(hotWhite, plasmaColor, 0.35) * tend.x * 0.6 + plasmaColor * tend.y * 1.1) * gate;
+        color += cyan * exp(-length(q - curQ) * 70.0) * 0.5 * gate;
     }
 
     // --- Layer 4: EMF Interference ---
