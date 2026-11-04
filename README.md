@@ -9,7 +9,7 @@ Each theme is a color palette + GLSL shader pair. Drop matching files in `themes
 | Theme | Vibe |
 |-------|------|
 | **street-shaman** | Neon-green occult hacker. A tumbling 3D Metatron's cube that morphs into an icosahedron and back, glowing embers rising through it, ritual fire, smoke haze, azure wisps. |
-| **feline-homunculus** | Cat-creature lost in rainy Tokyo. Rain on glass, neon bleed, wet pavement reflections. |
+| **feline-homunculus** | Cat-creature lost in rainy Tokyo. A back-alley of abstract neon smears in crimson, electric blue and neon green, lit facades and sagging power lines reflected in the wet street, rain on glass, and a small pixel-art cat on an air-conditioner that watches your cursor, perks up when you type, stares at selections, paws at the cursor when it lands beside it, sleeps when you look away, and every so often strolls off along the street and back. |
 | **electrode-shaper** | Cyberpunk CRT plasma lab. Electrode arcs, EMF interference, violet-cyan plasma field. |
 | **deep-drift** | USS Erebus, 30 years adrift. Degraded amber phosphor CRT, radiation static, burn-in. |
 | **night-temple** | Egyptian night ritual. Torchlit temple, starfield, Nile reflections, hieroglyphic prompt. |
