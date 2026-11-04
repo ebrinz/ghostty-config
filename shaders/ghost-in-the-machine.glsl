@@ -3,6 +3,14 @@
 // sparse matrix code-rain, and a rare magenta Snow Crash glitch burst.
 // Ecto-green leads; magenta is the neon twang. Luma text guard keeps
 // glyphs crisp. Single-pass Ghostty fragment shader.
+//
+// Interaction (Ghostty 1.4 uniforms):
+//   cursor  — the ghost. An ectoplasm wake trails the cursor on jumps of
+//             2+ cells, and the landing cell tears with a magenta glitch.
+//             A faint ecto aura breathes around the resting cursor.
+//   focus   — unfocused, the séance goes still: lattice tremor stops, the
+//             code-rain and glitch bursts stop, the room dims. Regaining
+//             focus fires a Snow Crash burst at the cursor's row.
 
 const float PI = 3.14159265359;
 
@@ -86,6 +94,33 @@ vec2 geodesicLattice(vec2 uv, float aspect, float t) {
     return vec2(edge, node);
 }
 
+// ---------------------------------------------------------------------------
+// Interaction helpers
+// iCurrentCursor / iPreviousCursor: xy = left edge and +Y edge of the cursor
+// in fragCoord pixels, zw = size. Ghostty keeps the +Y edge convention
+// consistent with fragCoord on every backend, so this needs no y-flip.
+// ---------------------------------------------------------------------------
+vec2 cursorCenter(vec4 c) { return vec2(c.x + c.z * 0.5, c.y - c.w * 0.5); }
+
+// Ectoplasm wake: head glides prev -> cur with ease-out, body thins and
+// dissolves behind it. Returns intensity 0..1 at pixel p.
+float ectoWake(vec2 p, vec2 a, vec2 b, float age, float cell, float t) {
+    const float DUR = 0.55;
+    float k = clamp(age / DUR, 0.0, 1.0);
+    float ease = 1.0 - pow(1.0 - k, 3.0);
+    vec2 head = mix(a, b, ease);
+    float d = segDist(p, a, head);
+    vec2 ab = head - a;
+    float along = clamp(dot(p - a, ab) / max(dot(ab, ab), 1e-4), 0.0, 1.0);
+    // wake is wide at the head, tapers toward the tail
+    float width = cell * mix(0.25, 0.75, along);
+    float body = smoothstep(width, 0.0, d);
+    // vapor break-up so the wake dissolves instead of fading uniformly
+    float wisp = noise(p / cell * 1.5 + vec2(t * 2.0, -t * 1.5));
+    body *= mix(0.4, 1.0, wisp);
+    return body * (1.0 - k) * mix(0.35, 1.0, along);
+}
+
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     vec2 uv = fragCoord / iResolution.xy;
     float aspect = iResolution.x / iResolution.y;
@@ -97,6 +132,24 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float textMask = smoothstep(0.05, 0.14, luma);
 
     vec3 color = clean.rgb;
+
+    // --- Interaction state ---
+    float focused   = float(iFocus > 0);
+    float focusAge  = iTime - iTimeFocus;                 // s since focus gained
+    vec2  curC      = cursorCenter(iCurrentCursor);
+    vec2  prevC     = cursorCenter(iPreviousCursor);
+    float cell      = max(max(iCurrentCursor.z, iCurrentCursor.w), 4.0);
+    float moveAge   = iTime - iTimeCursorChange;
+    // move measured in columns/rows (a bar cursor's z is only the bar width
+    // and an underline's w only its thickness, so each axis has a fallback)
+    vec2  cellWH    = vec2(iCurrentCursor.z > 4.0 ? iCurrentCursor.z : max(iCurrentCursor.w * 0.5, 2.0),
+                           max(max(iCurrentCursor.w, iCurrentCursor.z * 2.0), 4.0));
+    float moveCells = length((curC - prevC) / cellWH);
+    float hasPrev   = step(0.5, iPreviousCursor.w);       // 0 until first move
+    float jumpGate  = hasPrev * smoothstep(1.2, 3.0, moveCells);
+    float cursorD   = length(fragCoord - curC) / cell;    // distance in cells
+    // unfocused: the séance goes still
+    float still     = 1.0 - focused;
 
     // -----------------------------------------------------------------------
     // Layer 1 — Ectoplasmic vapor: domain-warped fbm mist that curls.
@@ -111,7 +164,9 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // -----------------------------------------------------------------------
     // Layer 2 — Geodesic lattice: faint jittering mesh, brighter nodes.
     // -----------------------------------------------------------------------
-    vec2 lat = geodesicLattice(uv, aspect, time);
+    // unfocused, the lattice freezes mid-tremor (time held at the focus-loss
+    // frame is unavailable, so hold it on a slow clock instead)
+    vec2 lat = geodesicLattice(uv, aspect, mix(time, floor(time * 0.5) * 2.0, still));
     color += ECTO * lat.x * 0.07;
     color += ECTO * lat.y * 0.18;
 
@@ -127,20 +182,50 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // glyph flicker: cells wink as the trail passes, like changing characters
     float rowId = floor(uv.y * 45.0);
     float glyph = step(0.4, hash21(vec2(colId, rowId) + floor(time * 6.0)));
-    streak *= (0.45 + 0.55 * glyph) * gate;
+    streak *= (0.45 + 0.55 * glyph) * gate * focused;
     color += PHOS * streak * 0.16;
     // bright head at the leading edge of each trail
-    float head = smoothstep(0.05, 0.0, phase) * gate * glyph;
+    float head = smoothstep(0.05, 0.0, phase) * gate * glyph * focused;
     color += vec3(0.85, 1.0, 0.92) * head * 0.22;
+
+    // -----------------------------------------------------------------------
+    // Layer 3b — The ghost: ecto aura on the resting cursor, ectoplasm wake
+    // on jumps, magenta tear where it lands.
+    // -----------------------------------------------------------------------
+    float breath = 0.75 + 0.25 * sin(time * 1.7);
+    float aura = exp(-cursorD * 1.6) * breath * focused;
+    color += ECTO * aura * 0.22;
+
+    float wake = ectoWake(fragCoord, prevC, curC, moveAge, cell, time) * jumpGate;
+    color += mix(ECTO, vec3(0.85, 1.0, 0.92), wake) * wake * 0.55;
+
+    // landing tear: a one-cell-tall band through the new cursor row that
+    // resamples the frame sideways for ~180 ms
+    float land = smoothstep(0.18, 0.0, moveAge) * jumpGate;
+    if (land > 0.001) {
+        float rowBand = smoothstep(cell * 0.9, cell * 0.3, abs(fragCoord.y - curC.y));
+        float near = smoothstep(cell * 14.0, 0.0, abs(fragCoord.x - curC.x));
+        float tear = rowBand * near * land;
+        float sn = hash21(vec2(floor(fragCoord.y), floor(time * 60.0)));
+        vec3 torn = texture(iChannel0, uv + vec2((sn - 0.5) * 0.015 * tear, 0.0)).rgb;
+        color = mix(color, torn, tear * 0.7);
+        color += MAGENTA * tear * sn * 0.5;
+    }
 
     // -----------------------------------------------------------------------
     // Layer 4 — Snow Crash burst: rare magenta static band with glitch offset.
     // -----------------------------------------------------------------------
     const float CYCLE = 13.0;
     float ct = mod(time, CYCLE);
-    float burst = smoothstep(0.0, 0.06, ct) * smoothstep(0.55, 0.30, ct);
+    float burst = smoothstep(0.0, 0.06, ct) * smoothstep(0.55, 0.30, ct) * focused;
+    float bandY = hash21(vec2(floor(time / CYCLE), 2.0)) * 0.8 + 0.1;
+    // focus gain: the machine notices you — a burst rides the cursor's row
+    float fburst = smoothstep(0.0, 0.05, focusAge) * smoothstep(0.7, 0.25, focusAge) * focused;
+    if (fburst > burst) {
+        burst = fburst;
+        bandY = curC.y / iResolution.y;
+    }
     if (burst > 0.001) {
-        float bandY = hash21(vec2(floor(time / CYCLE), 2.0)) * 0.8 + 0.1;
         float band = smoothstep(0.05, 0.0, abs(uv.y - bandY));
         float staticN = hash21(vec2(floor(uv.y * 300.0), floor(time * 60.0)));
         // chromatic tear: resample the frame shifted sideways inside the band
@@ -156,6 +241,9 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     vec2 vd = uv - 0.5;
     float vig = 1.0 - dot(vd, vd) * 1.1;
     color *= clamp(vig, 0.0, 1.0);
+
+    // --- Focus: unfocused window sinks further into the dark ---
+    color *= mix(1.0, 0.62, still);
 
     // --- Text protection ---
     color = clamp(color, 0.0, 1.0);

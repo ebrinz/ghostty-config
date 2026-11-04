@@ -1,6 +1,8 @@
 // entropy-field-lite.glsl
 // Reduced-power variant of entropy-field — fewer octaves, no bit-rain,
 // gentler motion. Same palette and text guard. For battery / low-GPU use.
+// Interaction: lattice cells near the cursor sample more often; unfocused,
+// the lattice goes quiet and the backdrop dims.
 
 const vec3 ACCENT = vec3(0.424, 0.941, 0.816);
 const vec3 GOLD   = vec3(0.949, 0.757, 0.306);
@@ -23,6 +25,10 @@ float noise(vec2 p) {
     return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 }
 
+// iCurrentCursor / iPreviousCursor: xy = left edge and +Y edge in fragCoord
+// pixels, zw = size. Same convention as fragCoord on every backend.
+vec2 cursorCenter(vec4 c) { return vec2(c.x + c.z * 0.5, c.y - c.w * 0.5); }
+
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     vec2 uv = fragCoord / iResolution.xy;
     float aspect = iResolution.x / iResolution.y;
@@ -34,6 +40,11 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
 
     vec3 color = clean.rgb;
 
+    // --- Interaction state ---
+    float focused = float(iFocus > 0);
+    float cursorD = length(fragCoord - cursorCenter(iCurrentCursor))
+                  / max(max(iCurrentCursor.z, iCurrentCursor.w), 4.0);
+
     // Entropy haze (2 octaves only).
     vec2 fp = uv * vec2(aspect, 1.0) * 3.0 + vec2(time * 0.03, time * 0.02);
     float haze = noise(fp) * 0.6 + noise(fp * 2.0) * 0.4;
@@ -43,7 +54,10 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     vec2 cells = uv * vec2(48.0 * aspect, 28.0);
     vec2 cid = floor(cells);
     float cellRand = hash21(cid);
-    float flick = step(0.99, fract(sin(cellRand * 91.7 + time * 0.4) * 0.5 + 0.5));
+    // the sampler (cursor) drives nearby cells harder; idle windows go quiet
+    float near = exp(-cursorD * 0.35) * focused;
+    float thresh = mix(0.99, 0.8, near) + (1.0 - focused) * 0.008;
+    float flick = step(thresh, fract(sin(cellRand * 91.7 + time * 0.4) * 0.5 + 0.5));
     float dot2 = smoothstep(0.42, 0.0, length(fract(cells) - 0.5));
     color += mix(ACCENT, GOLD, cellRand) * dot2 * flick * 0.4;
 
@@ -53,6 +67,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
 
     vec2 vd = uv - 0.5;
     color *= clamp(1.0 - dot(vd, vd) * 1.1, 0.0, 1.0);
+    color *= mix(0.7, 1.0, focused);   // idle in the background
 
     color = clamp(color, 0.0, 1.0);
     color = mix(color, clean.rgb, textMask);

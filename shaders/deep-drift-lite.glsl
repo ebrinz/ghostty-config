@@ -3,6 +3,9 @@
 // Drops: power flicker, radiation bursts, h-sync wobble (all noise removed).
 // Effects: barrel distortion, chromatic aberration, scanlines, burn-in,
 //          vignette, 40Hz gamma entrainment, text protection.
+// Interaction: amber phosphor ghost at the cursor's previous position and a
+// bloom on the current one; unfocused is standby (half brightness); focus
+// gain is a CRT power-on raster unfold.
 
 const float PI = 3.14159265359;
 const float GAMMA_HZ = 40.0;
@@ -47,6 +50,17 @@ float burnIn(vec2 uv) {
     return burn;
 }
 
+// --- Interaction helpers (Ghostty 1.4 uniforms) ---
+// iCurrentCursor / iPreviousCursor: xy = left edge and +Y edge in fragCoord
+// pixels, zw = size. Same convention as fragCoord on every backend.
+vec2 cursorCenter(vec4 c) { return vec2(c.x + c.z * 0.5, c.y - c.w * 0.5); }
+
+float cursorBox(vec2 p, vec4 c, float soft) {
+    vec2 halfSize = max(c.zw * 0.5, vec2(1.0));
+    vec2 d = abs(p - cursorCenter(c)) - halfSize;
+    return 1.0 - smoothstep(0.0, soft, length(max(d, 0.0)));
+}
+
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
@@ -54,6 +68,31 @@ float burnIn(vec2 uv) {
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     vec2 rawUV = fragCoord / iResolution.xy;
     float time = iTime;
+
+    // --- Interaction state ---
+    float focused   = float(iFocus > 0);
+    float focusAge  = iTime - iTimeFocus;
+    vec2  curC      = cursorCenter(iCurrentCursor);
+    vec2  prevC     = cursorCenter(iPreviousCursor);
+    float cell      = max(max(iCurrentCursor.z, iCurrentCursor.w), 4.0);
+    float moveAge   = iTime - iTimeCursorChange;
+    // move measured in columns/rows (a bar cursor's z is only the bar width
+    // and an underline's w only its thickness, so each axis has a fallback)
+    vec2  cellWH    = vec2(iCurrentCursor.z > 4.0 ? iCurrentCursor.z : max(iCurrentCursor.w * 0.5, 2.0),
+                           max(max(iCurrentCursor.w, iCurrentCursor.z * 2.0), 4.0));
+    float moveCells = length((curC - prevC) / cellWH);
+    float jumpGate  = step(0.5, iPreviousCursor.w) * smoothstep(1.2, 3.0, moveCells);
+    float cursorD   = length(fragCoord - curC) / cell;
+    float hasPrev   = step(0.5, iPreviousCursor.w);
+    float standby   = 1.0 - focused;
+
+    // --- Power-on: raster unfolds from a horizontal line over 0.45 s ---
+    float unfold = focused * (1.0 - smoothstep(0.0, 0.45, focusAge));
+    float vScale = max(1.0 - unfold * unfold, 0.015);
+    rawUV.y = 0.5 + (rawUV.y - 0.5) / vScale;
+    float rasterLine = unfold * smoothstep(0.02, 0.0, abs(fragCoord.y / iResolution.y - 0.5))
+                     * smoothstep(0.0, 0.1, unfold);
+    float rasterMask = step(0.0, rawUV.y) * step(rawUV.y, 1.0);
 
     // --- Layer 1: CRT Screen Artifacts ---
 
@@ -79,8 +118,8 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
     float textMask = smoothstep(0.05, 0.12, luma);
 
-    // Scanlines
-    float scanline = 1.0 - 0.20 * mod(floor(fragCoord.y), 2.0);
+    // Scanlines (deeper in standby)
+    float scanline = 1.0 - mix(0.20, 0.35, standby) * mod(floor(fragCoord.y), 2.0);
     color *= scanline;
 
     // --- Layer 2: Phosphor Burn-In ---
@@ -88,12 +127,23 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float burn = burnIn(uv);
     color += amberBurn * burn;
 
+    // --- Phosphor persistence: ghost of the previous cursor, bloom on the current ---
+    vec3 phosphor = vec3(0.91, 0.63, 0.06);
+    float ghost = cursorBox(fragCoord, iPreviousCursor, cell * 0.35)
+                * pow(1.0 - clamp(moveAge / 1.4, 0.0, 1.0), 1.6) * hasPrev * smoothstep(1.0, 2.0, moveCells);
+    color += phosphor * ghost * 0.55;
+    color += phosphor * exp(-cursorD * 1.7) * 0.16 * mix(0.4, 1.0, focused);
+
     // --- Layer 6: Vignette (Aggressive, asymmetric) ---
     vec2 vignetteCenter = vec2(0.52, 0.53);
     float vignetteDist = length(rawUV - vignetteCenter);
     float vignette = smoothstep(0.78, 0.25, vignetteDist);
     vignette = mix(0.15, 1.0, vignette);
     color *= vignette;
+
+    // --- Focus: standby brightness, power-on raster ---
+    color *= mix(1.0, 0.5, standby) * rasterMask;
+    color += phosphor * rasterLine * 1.2 + vec3(1.0, 0.95, 0.85) * rasterLine * 0.6;
 
     // --- Layer 7a: 40 Hz Gamma Entrainment ---
     float gamma = sin(2.0 * PI * GAMMA_HZ * time);

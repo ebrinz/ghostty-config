@@ -4,6 +4,16 @@
 // Single-pass fragment shader for Ghostty with 7 composited layers.
 // CRT artifacts, phosphor burn-in, power supply flicker, radiation static,
 // H-sync wobble, vignette, 40 Hz gamma entrainment, and text protection.
+//
+// Interaction (Ghostty 1.4 uniforms):
+//   cursor — slow amber phosphor. The cursor leaves a ghost of itself at its
+//            previous position that decays over ~1.4 s, with a faint smear
+//            between the two on jumps of 2+ cells. A soft phosphor bloom
+//            haloes the resting cursor.
+//   focus  — unfocused, the console drops to standby: half brightness,
+//            deeper scanlines, heavier power-supply dips. Regaining focus is
+//            a CRT power-on: the raster collapses to a bright line and
+//            unfolds vertically over ~0.45 s.
 
 const float PI = 3.14159265359;
 const float GAMMA_HZ = 40.0;
@@ -109,12 +119,55 @@ float radiationBurst(vec2 uv, float time) {
 }
 
 // ---------------------------------------------------------------------------
+// Interaction helpers
+// iCurrentCursor / iPreviousCursor: xy = left edge and +Y edge in fragCoord
+// pixels, zw = size. Same convention as fragCoord on every backend.
+// ---------------------------------------------------------------------------
+
+vec2 cursorCenter(vec4 c) { return vec2(c.x + c.z * 0.5, c.y - c.w * 0.5); }
+
+// Soft box: 1 inside the cursor rect, feathering out by `soft` pixels.
+float cursorBox(vec2 p, vec4 c, float soft) {
+    vec2 center = cursorCenter(c);
+    vec2 halfSize = max(c.zw * 0.5, vec2(1.0));
+    vec2 d = abs(p - center) - halfSize;
+    float outside = length(max(d, 0.0));
+    return 1.0 - smoothstep(0.0, soft, outside);
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     vec2 rawUV = fragCoord / iResolution.xy;
     float time = iTime;
+
+    // --- Interaction state ---
+    float focused   = float(iFocus > 0);
+    float focusAge  = iTime - iTimeFocus;
+    vec2  curC      = cursorCenter(iCurrentCursor);
+    vec2  prevC     = cursorCenter(iPreviousCursor);
+    float cell      = max(max(iCurrentCursor.z, iCurrentCursor.w), 4.0);
+    float moveAge   = iTime - iTimeCursorChange;
+    // move measured in columns/rows (a bar cursor's z is only the bar width
+    // and an underline's w only its thickness, so each axis has a fallback)
+    vec2  cellWH    = vec2(iCurrentCursor.z > 4.0 ? iCurrentCursor.z : max(iCurrentCursor.w * 0.5, 2.0),
+                           max(max(iCurrentCursor.w, iCurrentCursor.z * 2.0), 4.0));
+    float moveCells = length((curC - prevC) / cellWH);
+    float hasPrev   = step(0.5, iPreviousCursor.w);
+    float jumpGate  = hasPrev * smoothstep(1.2, 3.0, moveCells);
+    float cursorD   = length(fragCoord - curC) / cell;
+    float standby   = 1.0 - focused;
+
+    // --- Power-on: raster unfolds from a horizontal line over 0.45 s ---
+    const float POWER_DUR = 0.45;
+    float unfold = focused * (1.0 - smoothstep(0.0, POWER_DUR, focusAge)); // 1 -> 0
+    float vScale = max(1.0 - unfold * unfold, 0.015);
+    rawUV.y = 0.5 + (rawUV.y - 0.5) / vScale;
+    float rasterLine = unfold * smoothstep(0.02, 0.0, abs(fragCoord.y / iResolution.y - 0.5))
+                     * smoothstep(0.0, 0.1, unfold);
+    float rasterMask = step(0.0, rawUV.y) * step(rawUV.y, 1.0);
 
     // --- Layer 5: H-Sync Wobble (applied to UV before sampling) ---
     // A band of horizontal displacement that drifts vertically
@@ -149,8 +202,8 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
     float textMask = smoothstep(0.05, 0.12, luma);
 
-    // Scanlines — thick, old hardware (20% darkening)
-    float scanline = 1.0 - 0.20 * mod(floor(fragCoord.y), 2.0);
+    // Scanlines — thick, old hardware (20% darkening; 35% in standby)
+    float scanline = 1.0 - mix(0.20, 0.35, standby) * mod(floor(fragCoord.y), 2.0);
     color *= scanline;
 
     // --- Layer 2: Phosphor Burn-In ---
@@ -164,8 +217,27 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float flickerNoise2 = noise(vec2(time * 0.17, 50.0));
     float combined = flickerNoise * flickerNoise2;
     // Threshold to create occasional dips rather than constant modulation
-    float dip = smoothstep(0.15, 0.05, combined) * 0.15;
+    float dip = smoothstep(0.15, 0.05, combined) * mix(0.15, 0.35, standby);
     color *= (1.0 - dip);
+
+    // --- Layer 3b: Phosphor persistence — the cursor's ghost and bloom ---
+    vec3 phosphor = vec3(0.91, 0.63, 0.06); // #e8a010 cursor amber
+    // ghost of the previous cursor block, decaying over ~1.4 s
+    float ghostAge = clamp(moveAge / 1.4, 0.0, 1.0);
+    float ghost = cursorBox(fragCoord, iPreviousCursor, cell * 0.35)
+                * pow(1.0 - ghostAge, 1.6) * hasPrev * smoothstep(1.0, 2.0, moveCells);
+    color += phosphor * ghost * 0.55;
+    // smear between old and new position on jumps
+    if (jumpGate > 0.001) {
+        vec2 ab = curC - prevC;
+        float h = clamp(dot(fragCoord - prevC, ab) / max(dot(ab, ab), 1e-4), 0.0, 1.0);
+        float dSmear = length(fragCoord - prevC - ab * h);
+        float smear = smoothstep(cell * 0.45, 0.0, dSmear) * pow(1.0 - clamp(moveAge / 0.7, 0.0, 1.0), 2.0);
+        color += phosphor * smear * jumpGate * 0.25;
+    }
+    // bloom around the resting cursor
+    float bloom = exp(-cursorD * 1.7) * (0.92 + 0.08 * noise(vec2(time * 8.0, 2.0)));
+    color += phosphor * bloom * 0.16 * mix(0.4, 1.0, focused);
 
     // --- Layer 4: Deep Space Radiation Static ---
     float radiation = radiationBurst(uv, time);
@@ -178,6 +250,11 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float vignette = smoothstep(0.78, 0.25, vignetteDist);
     vignette = mix(0.15, 1.0, vignette);
     color *= vignette;
+
+    // --- Focus: standby brightness, power-on raster ---
+    color *= mix(1.0, 0.5, standby);
+    color *= rasterMask;
+    color += phosphor * rasterLine * 1.2 + vec3(1.0, 0.95, 0.85) * rasterLine * 0.6;
 
     // --- Layer 7a: 40 Hz Gamma Entrainment ---
     float gamma = sin(2.0 * PI * GAMMA_HZ * time);

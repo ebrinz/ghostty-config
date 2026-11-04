@@ -8,7 +8,7 @@ Each theme is a color palette + GLSL shader pair. Drop matching files in `themes
 
 | Theme | Vibe |
 |-------|------|
-| **street-shaman** | Neon-green occult hacker. Ritual fire, smoke haze, azure wisps. |
+| **street-shaman** | Neon-green occult hacker. A tumbling 3D Metatron's cube that morphs into an icosahedron and back, glowing embers rising through it, ritual fire, smoke haze, azure wisps. |
 | **feline-homunculus** | Cat-creature lost in rainy Tokyo. Rain on glass, neon bleed, wet pavement reflections. |
 | **electrode-shaper** | Cyberpunk CRT plasma lab. Electrode arcs, EMF interference, violet-cyan plasma field. |
 | **deep-drift** | USS Erebus, 30 years adrift. Degraded amber phosphor CRT, radiation static, burn-in. |
@@ -37,6 +37,29 @@ ghostty-rng                    # then launch the observatory
 # …or, from the app repo, one shot in a fresh window:
 ~/Development/ghostty-rng/run.sh
 ```
+
+## Interaction
+
+Ghostty 1.4 exposes the terminal's **cursor** and **window focus** to custom shaders (`iCurrentCursor`, `iPreviousCursor`, `iTimeCursorChange`, `iFocus`, `iTimeFocus`). Every full and lite shader reacts to both. Mouse position (`iMouse`) is declared by Ghostty but never filled in, so there are no hover or click effects yet.
+
+Two shared rules keep it out of the way while typing:
+
+- **Cursor trails fire only on jumps of 2+ cells.** Single-cell moves (typing, scrolling output) show nothing beyond the resting glow. Vim motions, `clear`, a new prompt, or a click-to-move all fire.
+- **Unfocused windows dim** so the active one stands out. Regaining focus plays a short theme-specific "wake" (about 0.3–1 s). It also plays once on launch.
+
+| Theme | Resting cursor | Cursor jump | Unfocused | Focus gained |
+|-------|----------------|-------------|-----------|--------------|
+| **street-shaman** | Green ember candle-glow | Sparks scatter along the path and drift up | Fire burns down to embers: slow flicker, thicker smoke | Flare, settles over ~1 s |
+| **feline-homunculus** | Amber lantern glow with a rippled reflection smeared below it | Long-exposure light streak | Neon shuts off, alley goes cold blue; rain keeps falling | Neon tubes stutter back on |
+| **electrode-shaper** | Pulsing violet plasma corona | Jagged lightning arc old → new, plasma afterglow | Chamber powers down: plasma collapses, arcs stop, deeper scanlines | Power-on surge; one arc crosses the cursor's row |
+| **deep-drift** | Amber phosphor bloom | Phosphor ghost of the old cursor decays over ~1.4 s, smear between | Standby: half brightness, heavier PSU dips | CRT power-on: raster unfolds from a bright line |
+| **night-temple** | Gold oil-lamp flame | Ember comet | Braziers burn low; stars come out brighter | Torches flare |
+| **dip-shit** | — | Tape skip: tracking tear, chroma smear and static on the landing row | PAUSE: dim, desaturated, head-switching noise bars | PLAY: frame rolls back into lock |
+| **grog-harbor** | Dithered lantern glow | SCUMM walk: steps to the new spot at 12 fps with sprite afterimages | Dock sleeps: palette drops to 4 levels, torch stops flickering | Lantern and torch flare |
+| **entropy-field** | Lattice cells near the cursor sample far more often | Bits along the path flip gold, then settle | Bit-rain stops, lattice goes quiet | One sampling ring expands from the cursor |
+| **ghost-in-the-machine** | Breathing ecto aura | Ectoplasm wake, magenta glitch tear where it lands | Séance goes still: lattice freezes, rain and bursts stop | Snow Crash burst on the cursor's row |
+
+Static shaders are unchanged: they run with `custom-shader-animation = false`, so time-based trails and fades could not animate. `ghost-in-the-machine-nca` is also unchanged. **amber-splice** was added separately and does not have an interaction layer yet.
 
 ## Power Tiers
 
