@@ -5,6 +5,8 @@
 // Single-pass fragment shader for Ghostty with 5 composited layers:
 // amber wash, suspended motes, gold double helix, alien cyan strand + traveling splice
 // pulse, amber vignette, 40 Hz gamma entrainment, and luminance-based text protection.
+// Red highlights: rust mutation markers on every third helix node, a blood-amber
+// bloom at the vignette edge, rust motes, and a red core in the cursor's inclusion.
 //
 // Interaction (Ghostty 1.4 uniforms):
 //   cursor — the inclusion. A warm amber glow breathes around the resting
@@ -111,7 +113,9 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float moteHash = hash21(moteCell);
     if (moteHash > 0.99) {
         float tw = 0.5 + 0.5 * sin(time * (0.8 + moteHash) + moteHash * 6.28);
-        color += vec3(0.95, 0.70, 0.30) * tw * 0.35;
+        // a quarter of the inclusions are rust-red flecks
+        float rustMote = step(0.9975, moteHash);
+        color += mix(vec3(0.95, 0.70, 0.30), vec3(0.91, 0.48, 0.31), rustMote) * tw * 0.35;
     }
 
     // -----------------------------------------------------------------------
@@ -134,9 +138,15 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
 
     float beads = 0.5 + 0.5 * sin(phaseY * 3.0);
     float node = pow(beads, 6.0);
-
     vec3 goldStrand = vec3(0.95, 0.68, 0.22);
-    color += goldStrand * (glowA + glowB) * (0.06 + 0.10 * node);
+    vec3 rust = vec3(0.78, 0.35, 0.18);        // #c85a2e palette red
+    vec3 rustBright = vec3(0.91, 0.48, 0.31);  // #e87a4e
+    // every third bead is a mutation marker: rust-red instead of gold
+    float beadIdx = floor(phaseY * 3.0 / (2.0 * PI) + 0.25);
+    float marker = step(2.5, mod(beadIdx, 3.0));
+    vec3 nodeColor = mix(goldStrand, rustBright, marker);
+    color += goldStrand * (glowA + glowB) * 0.06;
+    color += nodeColor * (glowA + glowB) * node * mix(0.10, 0.16, marker);
 
     // base-pair rungs
     float rungGate = pow(0.5 + 0.5 * sin(phaseY * 3.0 + PI * 0.5), 8.0);
@@ -167,6 +177,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     vec3 inclusion = vec3(1.0, 0.72, 0.22); // #ffb838 cursor amber
     float resin = exp(-cursorD * 1.5) * (0.85 + 0.15 * sin(time * 1.3));
     color += inclusion * resin * 0.20 * mix(0.45, 1.0, focused);
+    color += rustBright * exp(-cursorD * 4.0) * 0.14 * mix(0.45, 1.0, focused); // red core
     float run = spliceRun(fragCoord, prevC, curC, moveAge, cell) * jumpGate;
     color += mix(alienCyan, spliceWhite, min(run, 1.0)) * run * 0.6;
 
@@ -178,6 +189,8 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float vig = smoothstep(0.85, 0.20, vDist);
     vig = mix(0.15, 1.0, vig);
     color *= vig;
+    // blood-amber bloom where the resin thickens at the edges
+    color += rust * (1.0 - vig) * 0.09;
     color *= mix(1.0, 0.6, dark);   // lab lights down when unfocused
 
     // -----------------------------------------------------------------------
@@ -186,6 +199,18 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float g = sin(2.0 * PI * GAMMA_HZ * time);
     float periphery = smoothstep(0.15, 0.5, vDist);
     color *= 1.0 + GAMMA_AMP * g * periphery;
+
+    // --- Icy text halo: a 4-tap bloom of the glyphs, tinted ice blue, laid on
+    // the background just outside each glyph. Cores are restored below.
+    vec2 px = 1.0 / iResolution.xy;
+    float halo = 0.0;
+    halo += dot(texture(iChannel0, uv + vec2( px.x * 1.5, 0.0)).rgb, vec3(0.2126, 0.7152, 0.0722));
+    halo += dot(texture(iChannel0, uv + vec2(-px.x * 1.5, 0.0)).rgb, vec3(0.2126, 0.7152, 0.0722));
+    halo += dot(texture(iChannel0, uv + vec2(0.0,  px.y * 1.5)).rgb, vec3(0.2126, 0.7152, 0.0722));
+    halo += dot(texture(iChannel0, uv + vec2(0.0, -px.y * 1.5)).rgb, vec3(0.2126, 0.7152, 0.0722));
+    halo = smoothstep(0.08, 0.6, halo * 0.25) * (1.0 - textMask);
+    vec3 ice = vec3(0.55, 0.85, 1.0);
+    color += ice * halo * 0.28;
 
     // --- Text Protection ---
     color = clamp(color, 0.0, 1.0);
