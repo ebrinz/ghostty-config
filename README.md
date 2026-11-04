@@ -57,9 +57,10 @@ Two shared rules keep it out of the way while typing:
 | **dip-shit** | — | Tape skip: tracking tear, chroma smear and static on the landing row | PAUSE: dim, desaturated, head-switching noise bars | PLAY: frame rolls back into lock |
 | **grog-harbor** | Dithered lantern glow | SCUMM walk: steps to the new spot at 12 fps with sprite afterimages | Dock sleeps: palette drops to 4 levels, torch stops flickering | Lantern and torch flare |
 | **entropy-field** | Lattice cells near the cursor sample far more often | Bits along the path flip gold, then settle | Bit-rain stops, lattice goes quiet | One sampling ring expands from the cursor |
+| **amber-splice** | Amber inclusion glow, breathing like light through resin | Splice run: blue-white charge races to the new spot, cyan strand decays behind it | Lab lights down: amber dims, splice pulse stops, alien strand idles | One splice pulse runs up the helix from the cursor's row |
 | **ghost-in-the-machine** | Breathing ecto aura | Ectoplasm wake, magenta glitch tear where it lands | Séance goes still: lattice freezes, rain and bursts stop | Snow Crash burst on the cursor's row |
 
-Static shaders are unchanged: they run with `custom-shader-animation = false`, so time-based trails and fades could not animate. `ghost-in-the-machine-nca` is also unchanged. **amber-splice** was added separately and does not have an interaction layer yet.
+Static shaders are unchanged: they run with `custom-shader-animation = false`, so time-based trails and fades could not animate. `ghost-in-the-machine-nca` is also unchanged.
 
 ## Power Tiers
 
