@@ -148,7 +148,7 @@ themes/
   ghost-in-the-machine          # Color palette
 shaders/
   street-shaman.glsl            # Full: fire + smoke + entrainment
-  street-shaman-lite.glsl       # Lite: firelight + bottom glow
+  street-shaman-lite.glsl       # Lite: firelight + slim Metatron's cube
   street-shaman-static.glsl     # Static: vignette only
   feline-homunculus.glsl        # Full: rain + neon + entrainment
   feline-homunculus-lite.glsl   # Lite: single-layer rain
